@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { addHeaderBarButton, removeHeaderBarButton } from "@api/HeaderBar";
+import { addChannelToolbarButton, addHeaderBarButton, ChannelToolbarButton, HeaderBarButton, removeChannelToolbarButton, removeHeaderBarButton } from "@api/HeaderBar";
 import { PaintbrushIcon } from "@components/Icons";
 import definePlugin from "@utils/types";
 import { openModal } from "@webpack/common";
@@ -22,17 +22,28 @@ export default definePlugin({
     description: "Multi-slot Shop & Collectibles Studio: search and preview Avatar Decos, Profile Effects, and Nameplates simultaneously with Orbs/Fiat prices and Jump to Shop shortcuts.",
     tags: ["Media", "Utility"],
     authors: [{ name: "Onyx", id: 0n }],
+    enabledByDefault: true,
 
     start() {
-        addHeaderBarButton({
-            id: "gc-shop-previewer-btn",
-            icon: PaintbrushIcon,
-            tooltip: "Shop Combo Studio & Previewer",
-            onClick: openShopPreviewer
-        });
+        addHeaderBarButton("gc-shop-previewer-btn", () => (
+            <HeaderBarButton
+                icon={PaintbrushIcon}
+                tooltip="Shop Combo Studio & Previewer"
+                onClick={openShopPreviewer}
+            />
+        ));
+
+        addChannelToolbarButton("gc-shop-previewer-toolbar", () => (
+            <ChannelToolbarButton
+                icon={PaintbrushIcon}
+                tooltip="Shop Combo Studio"
+                onClick={openShopPreviewer}
+            />
+        ));
     },
 
     stop() {
         removeHeaderBarButton("gc-shop-previewer-btn");
+        removeChannelToolbarButton("gc-shop-previewer-toolbar");
     }
 });
