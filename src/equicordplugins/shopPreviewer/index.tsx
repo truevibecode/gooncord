@@ -14,7 +14,7 @@ import { ShopPreviewerModal } from "./ui";
 
 export function openShopPreviewer() {
     openModal(modalProps => (
-        <ShopPreviewerModal onClose={modalProps.onClose} />
+        <ShopPreviewerModal modalProps={modalProps} />
     ));
 }
 
@@ -47,15 +47,16 @@ export default definePlugin({
                     gap: "6px",
                     marginLeft: "8px",
                     padding: "6px 14px",
-                    borderRadius: "4px",
-                    background: "var(--brand-experiment, #5865F2)",
-                    color: "#ffffff",
+                    borderRadius: "16px",
+                    background: "linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)",
+                    color: "#000000",
                     border: "none",
-                    fontWeight: 600,
-                    fontSize: "13px",
+                    fontWeight: 700,
+                    fontSize: "12px",
                     cursor: "pointer",
-                    height: "34px",
-                    verticalAlign: "middle"
+                    height: "32px",
+                    verticalAlign: "middle",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.2)"
                 }}
                 title="Open Gooncord Shop Combo Studio"
             >
