@@ -12,7 +12,7 @@ import { openModal } from "@webpack/common";
 
 import { ShopPreviewerModal } from "./ui";
 
-function openShopPreviewer() {
+export function openShopPreviewer() {
     openModal(modalProps => (
         <ShopPreviewerModal onClose={modalProps.onClose} />
     ));
@@ -24,6 +24,45 @@ export default definePlugin({
     tags: ["Media", "Utility"],
     authors: [{ name: "Onyx", id: 0n }],
     enabledByDefault: true,
+
+    patches: [
+        // Patch Discord's Collectibles Shop Header to insert "Combo Studio" button beside "Search the Shop"
+        {
+            find: 'collectibles_shop_header_bar',
+            replacement: {
+                match: /(?<=\.ShopSearchBar,.+?\}\),)/,
+                replace: "$&$self.renderShopHeaderButton(),"
+            }
+        }
+    ],
+
+    renderShopHeaderButton() {
+        return (
+            <button
+                key="gc-shop-combo-studio-btn"
+                onClick={openShopPreviewer}
+                style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    marginLeft: "8px",
+                    padding: "6px 14px",
+                    borderRadius: "4px",
+                    background: "var(--brand-experiment, #5865F2)",
+                    color: "#ffffff",
+                    border: "none",
+                    fontWeight: 600,
+                    fontSize: "13px",
+                    cursor: "pointer",
+                    height: "34px",
+                    verticalAlign: "middle"
+                }}
+                title="Open Gooncord Shop Combo Studio"
+            >
+                ✨ Combo Studio
+            </button>
+        );
+    },
 
     start() {
         addHeaderBarButton("gc-shop-previewer-btn", () => (
