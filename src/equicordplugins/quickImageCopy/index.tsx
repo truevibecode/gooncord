@@ -1,15 +1,29 @@
 /*
-100 * Gooncord, a Discord client mod
-101 * Copyright (c) 2026 truevibecode and contributors
-102 * SPDX-License-Identifier: GPL-3.0-or-later
-103 */
+ * Gooncord, a Discord client mod
+ * Copyright (c) 2026 truevibecode and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
 
 import { addContextMenuPatch, findGroupChildrenByChildId, NavContextMenuPatchCallback, removeContextMenuPatch } from "@api/ContextMenu";
-import { CopyIcon } from "@components/Icons";
-import definePlugin from "@utils/types";
+import { definePluginSettings } from "@api/Settings";
+import { CopyIcon, OpenExternalIcon } from "@components/Icons";
+import definePlugin, { OptionType } from "@utils/types";
 import { Menu, showToast, Toasts } from "@webpack/common";
 
-const HOVER_BTN_CLASS = "gc-quick-image-copy-btn";
+const HOVER_CONTAINER_CLASS = "gc-quick-media-actions-container";
+
+export const settings = definePluginSettings({
+    allowGifs: {
+        type: OptionType.BOOLEAN,
+        default: true,
+        description: "Allow copying and downloading GIFs in addition to static images."
+    },
+    showDownloadButton: {
+        type: OptionType.BOOLEAN,
+        default: true,
+        description: "Display a quick 1-click Download button beside the Copy button on hover."
+    }
+});
 
 function isGifUrl(url: string) {
     if (!url) return false;
@@ -17,7 +31,7 @@ function isGifUrl(url: string) {
     return clean.endsWith(".gif") || url.includes("/gifs/") || clean.endsWith(".gifv");
 }
 
-function getImageUrlFromElement(el: HTMLElement): string | null {
+function getMediaUrlFromElement(el: HTMLElement): string | null {
     if (!el) return null;
     let url: string | null = null;
 
@@ -29,14 +43,34 @@ function getImageUrlFromElement(el: HTMLElement): string | null {
         else if (el.dataset?.src) url = el.dataset.src;
     }
 
-    if (!url || isGifUrl(url)) return null;
+    if (!url) return null;
+    if (!settings.store.allowGifs && isGifUrl(url)) return null;
+
     return url;
 }
 
-export async function copyImageFromUrl(url: string) {
+export async function copyMediaFromUrl(url: string) {
     try {
         const res = await fetch(url);
         const blob = await res.blob();
+
+        if (isGifUrl(url) || blob.type === "image/gif") {
+            // For GIFs, copy the direct animated image / URL or blob
+            try {
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        [blob.type]: blob
+                    })
+                ]);
+                showToast("GIF copied to clipboard!", Toasts.Type.SUCCESS);
+                return;
+            } catch {
+                // Fallback to text URL copy if browser refuses gif clipboard item
+                await navigator.clipboard.writeText(url);
+                showToast("GIF URL copied to clipboard!", Toasts.Type.SUCCESS);
+                return;
+            }
+        }
 
         const bitmap = await createImageBitmap(blob);
         const canvas = document.createElement("canvas");
@@ -63,11 +97,39 @@ export async function copyImageFromUrl(url: string) {
             }
         }, "image/png");
     } catch (e) {
-        showToast("Failed to copy image", Toasts.Type.FAILURE);
+        showToast("Failed to copy media", Toasts.Type.FAILURE);
     }
 }
 
-// Hover button injection observer
+export async function downloadMediaFromUrl(url: string) {
+    try {
+        const res = await fetch(url);
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+
+        const a = document.createElement("a");
+        a.href = blobUrl;
+
+        // Determine clean filename
+        const urlObj = new URL(url);
+        const pathname = urlObj.pathname;
+        let filename = pathname.substring(pathname.lastIndexOf("/") + 1) || "download";
+        if (!filename.includes(".")) {
+            filename += isGifUrl(url) ? ".gif" : ".png";
+        }
+
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(blobUrl);
+
+        showToast(`Downloaded ${filename}!`, Toasts.Type.SUCCESS);
+    } catch (e) {
+        showToast("Failed to download media", Toasts.Type.FAILURE);
+    }
+}
+
 let hoverListener: ((e: MouseEvent) => void) | null = null;
 
 function setupHoverObserver() {
@@ -75,79 +137,111 @@ function setupHoverObserver() {
         const target = e.target as HTMLElement;
         if (!target) return;
 
-        const wrapper = target.closest<HTMLElement>("[class*='imageWrapper'], [class*='imageContainer'], [class*='visualMediaItemContainer']");
+        const wrapper = target.closest<HTMLElement>(
+            "[class*='imageWrapper'], [class*='imageContainer'], [class*='visualMediaItemContainer'], [class*='mediaItem']"
+        );
         if (!wrapper) return;
 
-        const existingBtn = wrapper.querySelector(`.${HOVER_BTN_CLASS}`);
-        const imgUrl = getImageUrlFromElement(wrapper);
+        const existingContainer = wrapper.querySelector(`.${HOVER_CONTAINER_CLASS}`);
+        const mediaUrl = getMediaUrlFromElement(wrapper);
 
-        if (!imgUrl) {
-            existingBtn?.remove();
+        if (!mediaUrl) {
+            existingContainer?.remove();
             return;
         }
 
-        if (existingBtn) return;
+        if (existingContainer) return;
 
-        // Create hover button
-        const btn = document.createElement("button");
-        btn.className = HOVER_BTN_CLASS;
-        btn.title = "Copy Image";
-        btn.innerHTML = `
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z"/>
-            </svg>
-        `;
-
-        Object.assign(btn.style, {
+        // Container holding both Copy & Download buttons
+        const container = document.createElement("div");
+        container.className = HOVER_CONTAINER_CLASS;
+        Object.assign(container.style, {
             position: "absolute",
             top: "8px",
             right: "8px",
-            width: "32px",
-            height: "32px",
-            borderRadius: "6px",
-            backgroundColor: "rgba(0, 0, 0, 0.65)",
-            color: "#ffffff",
-            border: "none",
-            cursor: "pointer",
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            opacity: "0",
-            transition: "opacity 0.15s ease, transform 0.15s ease, background-color 0.15s ease",
+            gap: "6px",
             zIndex: "100",
-            backdropFilter: "blur(4px)"
+            opacity: "0",
+            transform: "scale(0.95)",
+            transition: "opacity 0.15s ease, transform 0.15s ease",
+            pointerEvents: "auto"
         });
 
+        const makeBtn = (title: string, svgPath: string, onClick: () => void) => {
+            const btn = document.createElement("button");
+            btn.title = title;
+            btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="${svgPath}"/></svg>`;
+            Object.assign(btn.style, {
+                width: "30px",
+                height: "30px",
+                borderRadius: "6px",
+                backgroundColor: "rgba(0, 0, 0, 0.7)",
+                color: "#ffffff",
+                border: "none",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "background-color 0.12s ease, transform 0.12s ease",
+                backdropFilter: "blur(4px)"
+            });
+
+            btn.addEventListener("mouseenter", () => {
+                btn.style.backgroundColor = "rgba(0, 0, 0, 0.9)";
+                btn.style.transform = "scale(1.08)";
+            });
+            btn.addEventListener("mouseleave", () => {
+                btn.style.backgroundColor = "rgba(0, 0, 0, 0.7)";
+                btn.style.transform = "scale(1)";
+            });
+            btn.addEventListener("click", ev => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                onClick();
+            });
+
+            return btn;
+        };
+
+        // Copy button
+        const copyBtn = makeBtn(
+            "Copy Media",
+            "M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z",
+            () => {
+                const cur = getMediaUrlFromElement(wrapper);
+                if (cur) copyMediaFromUrl(cur);
+            }
+        );
+        container.appendChild(copyBtn);
+
+        // Download button (if setting enabled)
+        if (settings.store.showDownloadButton) {
+            const downloadBtn = makeBtn(
+                "Download Media",
+                "M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z",
+                () => {
+                    const cur = getMediaUrlFromElement(wrapper);
+                    if (cur) downloadMediaFromUrl(cur);
+                }
+            );
+            container.appendChild(downloadBtn);
+        }
+
         const show = () => {
-            btn.style.opacity = "1";
-            btn.style.transform = "scale(1)";
+            container.style.opacity = "1";
+            container.style.transform = "scale(1)";
         };
         const hide = () => {
-            btn.style.opacity = "0";
-            btn.style.transform = "scale(0.95)";
+            container.style.opacity = "0";
+            container.style.transform = "scale(0.95)";
         };
 
         wrapper.style.position = wrapper.style.position || "relative";
         wrapper.addEventListener("mouseenter", show);
         wrapper.addEventListener("mouseleave", hide);
 
-        btn.addEventListener("mouseenter", () => {
-            btn.style.backgroundColor = "rgba(0, 0, 0, 0.85)";
-            btn.style.transform = "scale(1.08)";
-        });
-        btn.addEventListener("mouseleave", () => {
-            btn.style.backgroundColor = "rgba(0, 0, 0, 0.65)";
-            btn.style.transform = "scale(1)";
-        });
-
-        btn.addEventListener("click", (ev) => {
-            ev.preventDefault();
-            ev.stopPropagation();
-            const currentUrl = getImageUrlFromElement(wrapper);
-            if (currentUrl) copyImageFromUrl(currentUrl);
-        });
-
-        wrapper.appendChild(btn);
+        wrapper.appendChild(container);
         show();
     };
 
@@ -159,20 +253,45 @@ function removeHoverObserver() {
         document.removeEventListener("mouseover", hoverListener);
         hoverListener = null;
     }
-    document.querySelectorAll(`.${HOVER_BTN_CLASS}`).forEach(el => el.remove());
+    document.querySelectorAll(`.${HOVER_CONTAINER_CLASS}`).forEach(el => el.remove());
 }
+
+const imageMenuPatch: NavContextMenuPatchCallback = (children, props) => {
+    const url = props?.src || props?.itemSrc || props?.href;
+    if (!url) return;
+    if (!settings.store.allowGifs && isGifUrl(url)) return;
+
+    if (children.some(child => child?.props?.id === "quick-copy-media")) return;
+
+    const copyGroup = findGroupChildrenByChildId("copy-link", children)
+        ?? findGroupChildrenByChildId("copy-native-link", children)
+        ?? children;
+
+    copyGroup.unshift(
+        <Menu.MenuItem
+            label="Quick Copy Media"
+            key="quick-copy-media"
+            id="quick-copy-media"
+            leadingAccessory={{ type: "icon", icon: CopyIcon }}
+            action={() => copyMediaFromUrl(url)}
+        />
+    );
+};
 
 export default definePlugin({
     name: "QuickImageCopy",
-    description: "Displays a clean 1-click 'Copy Image' button on non-GIF images when hovering, with automatic clipboard PNG conversion and toast alerts.",
+    description: "Displays fast 1-click 'Copy' and 'Download' buttons on images and GIFs on hover, with customizable options and toast alerts.",
     tags: ["Media", "Utility"],
-    authors: [{ name: "Onyx", id: 0n }],
+    authors: [{ name: "ldvy", id: 0n }],
+    settings,
 
     start() {
         setupHoverObserver();
+        addContextMenuPatch(["image-context", "message", "message-actions"], imageMenuPatch);
     },
 
     stop() {
         removeHoverObserver();
+        removeContextMenuPatch(["image-context", "message", "message-actions"], imageMenuPatch);
     }
 });
