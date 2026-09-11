@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import { registerCommand, unregisterCommand } from "@api/Commands";
 import { addChannelToolbarButton, addHeaderBarButton, ChannelToolbarButton, HeaderBarButton, removeChannelToolbarButton, removeHeaderBarButton } from "@api/HeaderBar";
 import { PaintbrushIcon } from "@components/Icons";
 import definePlugin from "@utils/types";
@@ -40,10 +41,20 @@ export default definePlugin({
                 onClick={openShopPreviewer}
             />
         ));
+
+        registerCommand({
+            name: "shoppreview",
+            displayName: "shoppreview",
+            description: "Open the Gooncord Shop Combo Studio & Previewer",
+            execute: () => {
+                openShopPreviewer();
+            }
+        }, "ShopPreviewer");
     },
 
     stop() {
         removeHeaderBarButton("gc-shop-previewer-btn");
         removeChannelToolbarButton("gc-shop-previewer-toolbar");
+        unregisterCommand("shoppreview");
     }
 });
