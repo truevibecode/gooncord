@@ -16,8 +16,8 @@ export default definePlugin({
         {
             find: '?"BACK_FORWARD_NAVIGATION":',
             replacement: {
-                match: /(?<="HELP"===.{0,75}\{\}\))(?=\])/,
-                replace: ",...Vencord.Api.HeaderBar._addHeaderBarButtons()"
+                match: /(?<=return\s*\[)/,
+                replace: "...Vencord.Api.HeaderBar._addHeaderBarButtons(),"
             }
         },
         {
