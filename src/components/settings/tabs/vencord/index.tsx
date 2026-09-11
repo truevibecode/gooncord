@@ -226,15 +226,15 @@ function EquicordSettings() {
                         action={() => VencordNative.settings.openFolder()}
                     />
                 )}
-                <QuickAction
-                    Icon={GithubIcon}
-                    text="View Source Code"
-                    action={() =>
-                        VencordNative.native.openExternal(
-                            "https://github.com/" + gitRemote,
-                        )
-                    }
-                />
+                    <QuickAction
+                        Icon={GithubIcon}
+                        text="View Source Code"
+                        action={() =>
+                            VencordNative.native.openExternal(
+                                "https://github.com/truevibecode/gooncord"
+                            )
+                        }
+                    />
             </QuickActionCard>
 
             <Divider className={Margins.top20} />

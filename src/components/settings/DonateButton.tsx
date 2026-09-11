@@ -23,23 +23,34 @@ import { openInviteModal } from "@utils/discord";
 import { ButtonProps } from "@vencord/discord-types";
 import { showToast } from "@webpack/common";
 
+import { Button } from "@components/Button";
+import { Heart } from "@components/Heart";
+import { OpenExternalIcon } from "@components/Icons";
+import { copyToClipboard } from "@utils/clipboard";
+import { openInviteModal } from "@utils/discord";
+import { ButtonProps } from "@vencord/discord-types";
+import { showToast, Toasts } from "@webpack/common";
+
 export function DonateButton({
     equicord = false,
     className,
     ...props
 }: Partial<ButtonProps> & { equicord?: boolean; }) {
-    const link = "https://github.com/truevibecode/gooncord";
+    const ltcAddress = "LfzwNzPUoopm4AR36rNps2JzAUuoJ9Vf4C";
     return (
         <Button
             {...props}
             variant="none"
             size="medium"
             type="button"
-            onClick={() => VencordNative.native.openExternal(link)}
+            onClick={async () => {
+                await copyToClipboard(ltcAddress);
+                showToast("Address copied!", Toasts.Type.SUCCESS);
+            }}
             className={className || "vc-donate-button"}
         >
             <Heart />
-            GitHub
+            Donate (LTC)
         </Button>
     );
 }
