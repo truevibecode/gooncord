@@ -22,8 +22,22 @@ export const settings = definePluginSettings({
         type: OptionType.BOOLEAN,
         default: true,
         description: "Display a quick 1-click Download button beside the Copy button on hover."
+    },
+    randomizeFilename: {
+        type: OptionType.BOOLEAN,
+        default: true,
+        description: "Automatically randomize the filename when downloading images and GIFs."
     }
 });
+
+function getRandomString(length = 10): string {
+    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    let res = "";
+    for (let i = 0; i < length; i++) {
+        res += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return res;
+}
 
 function isGifUrl(url: string) {
     if (!url) return false;
@@ -110,12 +124,18 @@ export async function downloadMediaFromUrl(url: string) {
         const a = document.createElement("a");
         a.href = blobUrl;
 
-        // Determine clean filename
+        // Determine extension
         const urlObj = new URL(url);
         const pathname = urlObj.pathname;
-        let filename = pathname.substring(pathname.lastIndexOf("/") + 1) || "download";
-        if (!filename.includes(".")) {
-            filename += isGifUrl(url) ? ".gif" : ".png";
+        const originalName = pathname.substring(pathname.lastIndexOf("/") + 1) || "download";
+        const dotIndex = originalName.lastIndexOf(".");
+        const ext = dotIndex !== -1 ? originalName.substring(dotIndex) : (isGifUrl(url) ? ".gif" : ".png");
+
+        let filename = originalName;
+        if (settings.store.randomizeFilename) {
+            filename = `${getRandomString(12)}${ext}`;
+        } else if (!filename.includes(".")) {
+            filename += ext;
         }
 
         a.download = filename;
