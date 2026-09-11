@@ -1,19 +1,21 @@
 /*
-315 * Gooncord, a Discord client mod
-316 * Copyright (c) 2026 truevibecode and contributors
-317 * SPDX-License-Identifier: GPL-3.0-or-later
-318 */
+ * Gooncord, a Discord client mod
+ * Copyright (c) 2026 truevibecode and contributors
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
 
 import { Button } from "@components/Button";
-import { Divider } from "@components/Divider";
 import { Flex } from "@components/Flex";
 import { Heading } from "@components/Heading";
 import { OpenExternalIcon, ResetIcon } from "@components/Icons";
 import { Paragraph } from "@components/Paragraph";
-import { findStoreLazy } from "@webpack";
-import { Modal, ModalProps, NavigationRouter, React, showToast, Toasts, useMemo, useState, UserStore } from "@webpack/common";
+import { findByPropsLazy, findStoreLazy } from "@webpack";
+import { Modal, ModalProps, NavigationRouter, React, showToast, Toasts, useEffect, useMemo, useState, UserStore } from "@webpack/common";
+
+import { KNOWN_COLLECTIBLES } from "./catalog";
 
 const CollectiblesCategoryStore = findStoreLazy("CollectiblesCategoryStore");
+const CollectiblesActions = findByPropsLazy("fetchCollectiblesCategories");
 
 export interface LiveProduct {
     skuId: string;
@@ -32,60 +34,87 @@ export function ShopPreviewerModal({ modalProps }: { modalProps: ModalProps }) {
     const [selectedDeco, setSelectedDeco] = useState<LiveProduct | null>(null);
     const [selectedEffect, setSelectedEffect] = useState<LiveProduct | null>(null);
     const [selectedNameplate, setSelectedNameplate] = useState<LiveProduct | null>(null);
+    const [, forceUpdate] = useState(0);
 
     const currentUser = UserStore?.getCurrentUser();
 
-    // Pull catalog directly from store
+    // Trigger Discord Collectibles fetch if store is empty on open
+    useEffect(() => {
+        try {
+            CollectiblesActions?.fetchCollectiblesCategories?.({ noCache: false })
+                ?.then(() => forceUpdate(n => n + 1))
+                ?.catch(() => {});
+        } catch {}
+    }, []);
+
+    // Load from live store or fallback to catalog
     const liveCatalog = useMemo(() => {
         const store = CollectiblesCategoryStore;
         const list: LiveProduct[] = [];
-        if (!store?.products) return list;
 
-        const productsMap: Map<string, any> = store.products;
-        productsMap.forEach((p, skuId) => {
-            const category = store.getCategoryForProduct?.(skuId) || store.getCategory?.(p.categorySkuId);
-            const categoryName = category?.name || "Discord Shop";
+        if (store?.products && store.products.size > 0) {
+            const productsMap: Map<string, any> = store.products;
+            productsMap.forEach((p, skuId) => {
+                const category = store.getCategoryForProduct?.(skuId) || store.getCategory?.(p.categorySkuId);
+                const categoryName = category?.name || "Shop";
 
-            let type: LiveProduct["type"] = "decoration";
-            let asset: string | undefined = undefined;
+                let type: LiveProduct["type"] = "decoration";
+                let asset: string | undefined = undefined;
 
-            if (p.items) {
-                for (const item of p.items) {
-                    if (item.type === 0 || item.asset) {
-                        type = "decoration";
-                        asset = item.asset;
-                    } else if (item.type === 1 || item.effects || item.animationType) {
-                        type = "effect";
-                        asset = item.id || p.skuId;
-                    } else if (item.type === 2 || item.palette) {
-                        type = "nameplate";
-                        asset = item.asset;
+                if (p.items) {
+                    for (const item of p.items) {
+                        if (item.type === 0 || item.asset) {
+                            type = "decoration";
+                            asset = item.asset;
+                        } else if (item.type === 1 || item.effects || item.animationType) {
+                            type = "effect";
+                            asset = item.id || p.skuId;
+                        } else if (item.type === 2 || item.palette) {
+                            type = "nameplate";
+                            asset = item.asset;
+                        }
                     }
                 }
-            }
 
-            if (!asset) {
-                if (p.name?.toLowerCase().includes("effect")) type = "effect";
-                else if (p.name?.toLowerCase().includes("nameplate")) type = "nameplate";
-            }
+                if (!asset) {
+                    if (p.name?.toLowerCase().includes("effect")) type = "effect";
+                    else if (p.name?.toLowerCase().includes("nameplate")) type = "nameplate";
+                }
 
-            const priceMoney = p.price?.amount != null ? `$${(p.price.amount / 100).toFixed(2)}` : undefined;
-            const priceOrbs = p.orbPrice?.amount ?? p.orbPrice ?? undefined;
+                const priceMoney = p.price?.amount != null ? `$${(p.price.amount / 100).toFixed(2)}` : undefined;
+                const priceOrbs = p.orbPrice?.amount ?? p.orbPrice ?? undefined;
 
-            list.push({
-                skuId: p.skuId,
-                name: p.name || "Item",
-                type,
-                categoryName,
-                priceMoney,
-                priceOrbs,
-                description: p.summary || p.description || "",
-                asset
+                list.push({
+                    skuId: p.skuId,
+                    name: p.name || "Shop Item",
+                    type,
+                    categoryName,
+                    priceMoney,
+                    priceOrbs,
+                    description: p.summary || p.description || "",
+                    asset
+                });
             });
-        });
+        }
+
+        // Merge or fallback to catalog if Discord store returned nothing yet
+        if (list.length === 0) {
+            KNOWN_COLLECTIBLES.forEach(k => {
+                list.push({
+                    skuId: k.skuId,
+                    name: k.name,
+                    type: k.type,
+                    categoryName: k.category,
+                    priceMoney: k.priceMoney,
+                    priceOrbs: k.priceOrbs,
+                    description: k.description,
+                    asset: k.asset
+                });
+            });
+        }
 
         return list;
-    }, []);
+    }, [CollectiblesCategoryStore?.products?.size]);
 
     const filteredList = useMemo(() => {
         const q = search.trim().toLowerCase();
@@ -106,7 +135,7 @@ export function ShopPreviewerModal({ modalProps }: { modalProps: ModalProps }) {
             showToast("Opening Discord Shop...", Toasts.Type.SUCCESS);
             modalProps.onClose?.();
         } catch {
-            showToast("Could not transition to Shop", Toasts.Type.FAILURE);
+            showToast("Could not open Shop", Toasts.Type.FAILURE);
         }
     };
 
@@ -118,209 +147,205 @@ export function ShopPreviewerModal({ modalProps }: { modalProps: ModalProps }) {
     };
 
     return (
-        <Modal
-            {...modalProps}
-            size="dynamic"
-        >
+        <Modal {...modalProps} size="dynamic">
             <div
-                onClick={(e) => e.stopPropagation()}
+                onClick={e => e.stopPropagation()}
                 style={{
                     display: "flex",
                     flexDirection: "row",
-                    width: "880px",
-                    height: "600px",
-                    background: "rgba(18, 19, 24, 0.95)",
-                    backdropFilter: "blur(20px)",
-                    borderRadius: "28px",
+                    width: "740px",
+                    height: "480px",
+                    backgroundColor: "var(--background-primary, #313338)",
+                    border: "1px solid var(--border-subtle, rgba(255,255,255,0.08))",
+                    borderRadius: "8px",
                     overflow: "hidden",
-                    border: "1px solid rgba(255, 255, 255, 0.1)",
-                    boxShadow: "0 24px 64px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.15)",
-                    color: "#ffffff"
+                    boxShadow: "var(--elevation-high, 0 8px 16px rgba(0,0,0,0.3))",
+                    color: "var(--text-normal, #dbdee1)",
+                    fontFamily: "var(--font-primary)",
+                    boxSizing: "border-box"
                 }}
             >
-                {/* Left: Dreamy Cloud Profile Card Preview */}
+                {/* Left Column: Minimal Boxy Preview Dock */}
                 <div style={{
-                    width: "350px",
-                    background: "linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.01) 100%)",
-                    borderRight: "1px solid rgba(255, 255, 255, 0.06)",
+                    width: "280px",
+                    minWidth: "280px",
+                    backgroundColor: "var(--background-secondary, #2b2d31)",
+                    borderRight: "1px solid var(--border-subtle, rgba(255,255,255,0.08))",
                     display: "flex",
                     flexDirection: "column",
-                    alignItems: "center",
-                    padding: "28px 20px",
-                    position: "relative"
+                    padding: "16px",
+                    gap: "12px",
+                    boxSizing: "border-box"
                 }}>
-                    <Heading tag="h3" style={{ color: "#ffffff", fontWeight: 700, fontSize: "16px", marginBottom: "20px", letterSpacing: "0.5px" }}>
-                        ✨ Live Preview
+                    <Heading tag="h3" style={{
+                        color: "var(--header-secondary, #b5bac1)",
+                        fontWeight: 700,
+                        fontSize: "12px",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.04em",
+                        margin: 0
+                    }}>
+                        Live Preview
                     </Heading>
 
-                    {/* Dreamy Cloud Card Frame */}
+                    {/* Compact Boxy Profile Card */}
                     <div style={{
-                        width: "100%",
-                        background: "rgba(0, 0, 0, 0.45)",
-                        borderRadius: "24px",
-                        padding: "20px",
-                        position: "relative",
-                        overflow: "hidden",
-                        border: "1px solid rgba(255, 255, 255, 0.08)",
-                        boxShadow: "0 12px 32px rgba(0,0,0,0.5)"
+                        backgroundColor: "var(--card-background-default, #232428)",
+                        border: "1px solid var(--border-subtle, rgba(255,255,255,0.08))",
+                        borderRadius: "4px",
+                        overflow: "hidden"
                     }}>
-                        {/* Dreamy Soft Cloud Aura */}
-                        <div style={{
-                            position: "absolute",
-                            top: "-30px",
-                            left: "50%",
-                            transform: "translateX(-50%)",
-                            width: "220px",
-                            height: "90px",
-                            background: "radial-gradient(circle, rgba(168, 192, 255, 0.25) 0%, rgba(238, 156, 167, 0) 70%)",
-                            filter: "blur(20px)",
-                            pointerEvents: "none"
-                        }} />
-
                         {/* Profile Banner */}
                         <div style={{
-                            height: "70px",
-                            borderRadius: "16px",
-                            background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
+                            height: "60px",
+                            background: "linear-gradient(135deg, var(--brand-500, #5865f2) 0%, #3c4270 100%)",
                             position: "relative",
-                            overflow: "hidden"
+                            display: "flex",
+                            alignItems: "flex-end",
+                            padding: "6px 8px"
                         }}>
                             {selectedEffect && (
                                 <div style={{
-                                    fontSize: "12px",
-                                    fontWeight: 700,
-                                    color: "#ffffff",
-                                    textShadow: "0 2px 8px rgba(0,0,0,0.6)",
-                                    background: "rgba(0,0,0,0.25)",
-                                    padding: "4px 10px",
-                                    borderRadius: "20px",
-                                    backdropFilter: "blur(4px)"
+                                    fontSize: "10px",
+                                    fontWeight: 600,
+                                    color: "var(--header-primary, #ffffff)",
+                                    backgroundColor: "rgba(0,0,0,0.65)",
+                                    border: "1px solid var(--border-subtle, rgba(255,255,255,0.15))",
+                                    borderRadius: "3px",
+                                    padding: "2px 6px"
                                 }}>
                                     ✨ {selectedEffect.name}
                                 </div>
                             )}
                         </div>
 
-                        {/* Avatar & Active Decoration */}
-                        <div style={{ position: "relative", width: "72px", height: "72px", marginTop: "-36px", marginBottom: "12px", marginLeft: "8px" }}>
-                            <img
-                                src={currentUser?.getAvatarURL(void 0, 72, true) || "https://cdn.discordapp.com/embed/avatars/0.png"}
-                                alt="Avatar"
-                                style={{ width: "72px", height: "72px", borderRadius: "50%", border: "4px solid rgba(18, 19, 24, 0.95)" }}
-                            />
-                            {selectedDeco && (
-                                <div style={{
-                                    position: "absolute",
-                                    inset: "-8px",
-                                    borderRadius: "50%",
-                                    border: "2px solid rgba(255, 215, 0, 0.8)",
-                                    boxShadow: "0 0 16px rgba(255, 215, 0, 0.4)",
-                                    pointerEvents: "none"
-                                }} />
-                            )}
-                        </div>
-
-                        {/* Username & Nameplate */}
-                        <div style={{ padding: "0 4px" }}>
-                            <Flex alignItems="center" gap="8px">
-                                <span style={{ fontWeight: 800, fontSize: "17px", color: "#ffffff" }}>
-                                    {currentUser?.username || "User"}
-                                </span>
-                                {selectedNameplate && (
-                                    <span style={{
-                                        fontSize: "10px",
-                                        fontWeight: 700,
-                                        padding: "3px 8px",
-                                        borderRadius: "8px",
-                                        background: "linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)",
-                                        color: "#000"
-                                    }}>
-                                        {selectedNameplate.name}
-                                    </span>
+                        {/* Avatar & User Info */}
+                        <div style={{ padding: "0 10px 10px" }}>
+                            <div style={{ position: "relative", width: "52px", height: "52px", marginTop: "-26px", marginBottom: "8px" }}>
+                                <img
+                                    src={currentUser?.getAvatarURL(void 0, 52, true) || "https://cdn.discordapp.com/embed/avatars/0.png"}
+                                    alt="Avatar"
+                                    style={{
+                                        width: "52px",
+                                        height: "52px",
+                                        borderRadius: "50%",
+                                        border: "3px solid var(--card-background-default, #232428)",
+                                        backgroundColor: "var(--background-secondary, #2b2d31)"
+                                    }}
+                                />
+                                {selectedDeco && (
+                                    <div style={{
+                                        position: "absolute",
+                                        inset: "-4px",
+                                        borderRadius: "50%",
+                                        border: "2px solid var(--brand-500, #5865f2)",
+                                        pointerEvents: "none"
+                                    }} />
                                 )}
-                            </Flex>
-                            <div style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.5)", marginTop: "2px" }}>
-                                @{currentUser?.username || "user"}
                             </div>
-                        </div>
 
-                        {/* Mini Chat Message Preview Bubble */}
-                        <div style={{
-                            marginTop: "16px",
-                            padding: "10px 12px",
-                            borderRadius: "14px",
-                            background: "rgba(255, 255, 255, 0.05)",
-                            border: "1px solid rgba(255, 255, 255, 0.06)",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "10px"
-                        }}>
-                            <img
-                                src={currentUser?.getAvatarURL(void 0, 32, true) || "https://cdn.discordapp.com/embed/avatars/0.png"}
-                                alt=""
-                                style={{ width: "30px", height: "30px", borderRadius: "50%" }}
-                            />
-                            <div>
-                                <div style={{ fontSize: "12px", fontWeight: 700, color: "#ffffff" }}>{currentUser?.username}</div>
-                                <div style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.8)", marginTop: "2px" }}>
-                                    Clean combo check ☁️✨
-                                </div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                                <Flex alignItems="center" gap="6px">
+                                    <span style={{ fontWeight: 600, fontSize: "14px", color: "var(--header-primary, #ffffff)" }}>
+                                        {currentUser?.username || "User"}
+                                    </span>
+                                    {selectedNameplate && (
+                                        <span style={{
+                                            fontSize: "9px",
+                                            fontWeight: 700,
+                                            padding: "1px 5px",
+                                            borderRadius: "3px",
+                                            backgroundColor: "var(--brand-500, #5865f2)",
+                                            color: "#ffffff",
+                                            textTransform: "uppercase"
+                                        }}>
+                                            {selectedNameplate.name}
+                                        </span>
+                                    )}
+                                </Flex>
+                                <span style={{ fontSize: "11px", color: "var(--text-muted, #949ba4)" }}>
+                                    @{currentUser?.username || "user"}
+                                </span>
+                            </div>
+
+                            {/* Mini Message Preview */}
+                            <div style={{
+                                marginTop: "10px",
+                                padding: "8px",
+                                backgroundColor: "var(--background-secondary, #2b2d31)",
+                                border: "1px solid var(--border-subtle, rgba(255,255,255,0.08))",
+                                borderRadius: "4px",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "8px"
+                            }}>
+                                <img
+                                    src={currentUser?.getAvatarURL(void 0, 24, true) || "https://cdn.discordapp.com/embed/avatars/0.png"}
+                                    alt=""
+                                    style={{ width: "24px", height: "24px", borderRadius: "50%" }}
+                                />
+                                <span style={{ fontSize: "11px", color: "var(--text-normal, #dbdee1)", lineHeight: 1.3 }}>
+                                    Previewing cosmetic combination
+                                </span>
                             </div>
                         </div>
                     </div>
 
-                    {/* Reset & Jump Controls */}
-                    <div style={{ marginTop: "auto", width: "100%", display: "flex", gap: "8px" }}>
-                        <Button size="small" variant="secondary" onClick={clearAll} style={{ flex: 1, borderRadius: "12px" }}>
+                    {/* Action Buttons */}
+                    <div style={{ marginTop: "auto", display: "flex", gap: "8px" }}>
+                        <Button size="small" variant="secondary" onClick={clearAll} style={{ flex: 1, borderRadius: "4px" }}>
                             <ResetIcon style={{ marginRight: "4px" }} /> Reset
                         </Button>
-                        <Button size="small" variant="primary" onClick={() => jumpToShop()} style={{ flex: 1, borderRadius: "12px" }}>
+                        <Button size="small" variant="primary" onClick={() => jumpToShop()} style={{ flex: 1, borderRadius: "4px" }}>
                             Shop <OpenExternalIcon style={{ marginLeft: "4px" }} />
                         </Button>
                     </div>
                 </div>
 
-                {/* Right: Minimalist & Clean Catalog */}
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "28px 24px" }}>
-                    <Flex justifyContent="space-between" alignItems="center" style={{ marginBottom: "16px" }}>
-                        <div>
-                            <Heading tag="h2" style={{ margin: 0, color: "#ffffff", fontWeight: 800, fontSize: "20px" }}>
-                                Shop Combo Studio
-                            </Heading>
-                            <Paragraph color="text-subtle" style={{ margin: "2px 0 0", fontSize: "13px", color: "rgba(255, 255, 255, 0.6)" }}>
-                                Mix & match decos, effects, and nameplates with live prices.
-                            </Paragraph>
-                        </div>
-                    </Flex>
+                {/* Right Column: Search & Catalog */}
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "16px 20px", minWidth: 0 }}>
+                    <div style={{ marginBottom: "10px" }}>
+                        <Heading tag="h2" style={{ margin: "0 0 2px", color: "var(--header-primary, #ffffff)", fontWeight: 700, fontSize: "16px" }}>
+                            Collectibles Studio
+                        </Heading>
+                        <Paragraph color="text-subtle" style={{ margin: 0, fontSize: "12px", color: "var(--text-muted, #949ba4)" }}>
+                            Mix & match decorations, avatar effects, and nameplates with live prices.
+                        </Paragraph>
+                    </div>
 
-                    {/* Clean Search Input */}
                     <input
                         type="text"
-                        placeholder="Search items, effects, nameplates..."
+                        placeholder="Search items by name or category..."
                         value={search}
                         onChange={e => setSearch(e.target.value)}
                         style={{
                             width: "100%",
-                            padding: "12px 16px",
-                            borderRadius: "14px",
-                            background: "rgba(255, 255, 255, 0.05)",
-                            border: "1px solid rgba(255, 255, 255, 0.1)",
-                            color: "#ffffff",
-                            fontSize: "14px",
+                            height: "34px",
+                            padding: "6px 10px",
+                            borderRadius: "4px",
+                            backgroundColor: "var(--background-tertiary, #1e1f22)",
+                            border: "1px solid var(--border-subtle, rgba(255,255,255,0.08))",
+                            color: "var(--text-normal, #dbdee1)",
+                            fontSize: "13px",
                             outline: "none",
-                            marginBottom: "12px",
+                            marginBottom: "8px",
                             boxSizing: "border-box"
                         }}
                     />
 
-                    {/* Dreamy Pill Filter Tabs */}
-                    <div style={{ display: "flex", gap: "6px", marginBottom: "14px" }}>
+                    {/* Segmented Filter Bar */}
+                    <div style={{
+                        display: "flex",
+                        gap: "4px",
+                        backgroundColor: "var(--background-secondary, #2b2d31)",
+                        padding: "3px",
+                        border: "1px solid var(--border-subtle, rgba(255,255,255,0.08))",
+                        borderRadius: "4px",
+                        marginBottom: "10px"
+                    }}>
                         {[
                             { key: "all", label: "All" },
-                            { key: "decoration", label: "Decos" },
+                            { key: "decoration", label: "Decorations" },
                             { key: "effect", label: "Effects" },
                             { key: "nameplate", label: "Nameplates" }
                         ].map(t => (
@@ -328,15 +353,16 @@ export function ShopPreviewerModal({ modalProps }: { modalProps: ModalProps }) {
                                 key={t.key}
                                 onClick={() => setSelectedTab(t.key as any)}
                                 style={{
-                                    padding: "6px 14px",
-                                    borderRadius: "18px",
+                                    flex: 1,
+                                    height: "26px",
+                                    borderRadius: "3px",
                                     fontSize: "12px",
-                                    fontWeight: 700,
-                                    border: "none",
+                                    fontWeight: 600,
+                                    border: selectedTab === t.key ? "1px solid var(--border-subtle, rgba(255,255,255,0.15))" : "1px solid transparent",
                                     cursor: "pointer",
-                                    background: selectedTab === t.key ? "rgba(255, 255, 255, 0.2)" : "rgba(255, 255, 255, 0.04)",
-                                    color: selectedTab === t.key ? "#ffffff" : "rgba(255, 255, 255, 0.5)",
-                                    transition: "all 0.15s ease"
+                                    backgroundColor: selectedTab === t.key ? "var(--background-primary, #313338)" : "transparent",
+                                    color: selectedTab === t.key ? "var(--header-primary, #ffffff)" : "var(--interactive-normal, #949ba4)",
+                                    transition: "background-color 0.12s ease"
                                 }}
                             >
                                 {t.label}
@@ -344,20 +370,18 @@ export function ShopPreviewerModal({ modalProps }: { modalProps: ModalProps }) {
                         ))}
                     </div>
 
-                    <Divider style={{ margin: "0 0 12px", opacity: 0.1 }} />
-
-                    {/* Scrollable Products List */}
+                    {/* Product Items List */}
                     <div style={{
                         flex: 1,
                         overflowY: "auto",
                         display: "flex",
                         flexDirection: "column",
-                        gap: "8px",
+                        gap: "6px",
                         paddingRight: "4px"
                     }}>
                         {filteredList.length === 0 ? (
-                            <div style={{ textAlign: "center", color: "rgba(255, 255, 255, 0.4)", padding: "50px 0" }}>
-                                No collectibles found matching search.
+                            <div style={{ textAlign: "center", color: "var(--text-muted, #949ba4)", padding: "40px 0", fontSize: "13px" }}>
+                                No items match your filter.
                             </div>
                         ) : (
                             filteredList.map(item => {
@@ -373,32 +397,34 @@ export function ShopPreviewerModal({ modalProps }: { modalProps: ModalProps }) {
                                             display: "flex",
                                             alignItems: "center",
                                             justifyContent: "space-between",
-                                            padding: "12px 16px",
-                                            background: isSelected ? "rgba(255, 255, 255, 0.1)" : "rgba(255, 255, 255, 0.03)",
-                                            borderRadius: "14px",
-                                            border: isSelected ? "1px solid rgba(255, 255, 255, 0.3)" : "1px solid rgba(255, 255, 255, 0.05)",
-                                            transition: "background 0.15s ease"
+                                            height: "48px",
+                                            padding: "0 12px",
+                                            backgroundColor: isSelected ? "rgba(88, 101, 242, 0.12)" : "var(--card-background-default, #232428)",
+                                            borderRadius: "4px",
+                                            border: isSelected ? "1px solid var(--brand-500, #5865f2)" : "1px solid var(--border-subtle, rgba(255,255,255,0.08))",
+                                            transition: "background-color 0.12s ease",
+                                            boxSizing: "border-box"
                                         }}
                                     >
-                                        <div style={{ maxWidth: "280px" }}>
-                                            <div style={{ fontWeight: 700, fontSize: "14px", color: "#ffffff" }}>
+                                        <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", paddingRight: "8px" }}>
+                                            <div style={{ fontWeight: 600, fontSize: "13px", color: "var(--header-primary, #ffffff)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                                                 {item.name}
                                             </div>
-                                            <div style={{ fontSize: "11px", color: "rgba(255, 255, 255, 0.5)", marginTop: "2px" }}>
-                                                {item.categoryName} • {item.description || item.type}
+                                            <div style={{ fontSize: "11px", color: "var(--text-muted, #949ba4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                                {item.categoryName}
                                             </div>
                                         </div>
 
-                                        <Flex alignItems="center" gap="10px">
+                                        <Flex alignItems="center" gap="8px" style={{ flexShrink: 0 }}>
                                             <div style={{ textAlign: "right" }}>
                                                 {item.priceMoney && (
-                                                    <div style={{ fontWeight: 700, fontSize: "13px", color: "#ffffff" }}>
+                                                    <div style={{ fontWeight: 600, fontSize: "12px", color: "var(--text-positive, #23a55a)" }}>
                                                         {item.priceMoney}
                                                     </div>
                                                 )}
                                                 {item.priceOrbs != null && (
-                                                    <div style={{ color: "#d8b4fe", fontSize: "11px", fontWeight: 700 }}>
-                                                        🟣 {item.priceOrbs}
+                                                    <div style={{ color: "var(--text-muted, #949ba4)", fontSize: "10px", fontWeight: 600 }}>
+                                                        {item.priceOrbs} Orbs
                                                     </div>
                                                 )}
                                             </div>
@@ -406,7 +432,7 @@ export function ShopPreviewerModal({ modalProps }: { modalProps: ModalProps }) {
                                             <Button
                                                 size="small"
                                                 variant={isSelected ? "danger" : "primary"}
-                                                style={{ borderRadius: "10px" }}
+                                                style={{ height: "28px", padding: "0 10px", borderRadius: "4px" }}
                                                 onClick={() => {
                                                     if (item.type === "decoration") setSelectedDeco(isSelected ? null : item);
                                                     else if (item.type === "effect") setSelectedEffect(isSelected ? null : item);
@@ -417,7 +443,12 @@ export function ShopPreviewerModal({ modalProps }: { modalProps: ModalProps }) {
                                                 {isSelected ? "Remove" : "Preview"}
                                             </Button>
 
-                                            <Button size="small" variant="secondary" style={{ borderRadius: "10px" }} onClick={() => jumpToShop(item.skuId)}>
+                                            <Button
+                                                size="small"
+                                                variant="secondary"
+                                                style={{ height: "28px", padding: "0 10px", borderRadius: "4px" }}
+                                                onClick={() => jumpToShop(item.skuId)}
+                                            >
                                                 Shop
                                             </Button>
                                         </Flex>
