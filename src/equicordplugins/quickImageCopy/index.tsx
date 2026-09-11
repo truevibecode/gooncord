@@ -1,13 +1,15 @@
 /*
-240 * Gooncord, a Discord client mod
-241 * Copyright (c) 2026 truevibecode and contributors
-242 * SPDX-License-Identifier: GPL-3.0-or-later
-243 */
+100 * Gooncord, a Discord client mod
+101 * Copyright (c) 2026 truevibecode and contributors
+102 * SPDX-License-Identifier: GPL-3.0-or-later
+103 */
 
 import { addContextMenuPatch, findGroupChildrenByChildId, NavContextMenuPatchCallback, removeContextMenuPatch } from "@api/ContextMenu";
 import { CopyIcon } from "@components/Icons";
 import definePlugin from "@utils/types";
 import { Menu, showToast, Toasts } from "@webpack/common";
+
+const HOVER_BTN_CLASS = "gc-quick-image-copy-btn";
 
 function isGifUrl(url: string) {
     if (!url) return false;
@@ -15,28 +17,27 @@ function isGifUrl(url: string) {
     return clean.endsWith(".gif") || url.includes("/gifs/") || clean.endsWith(".gifv");
 }
 
-function getImageUrl(props: Record<string, any>): string | null {
-    if (!props) return null;
+function getImageUrlFromElement(el: HTMLElement): string | null {
+    if (!el) return null;
     let url: string | null = null;
 
-    if (typeof props.itemSrc === "string") url = props.itemSrc;
-    else if (typeof props.src === "string") url = props.src;
-    else if (typeof props.href === "string" && !props.href.startsWith("http")) url = props.href;
-    else if (props.target instanceof HTMLElement) {
-        const img = props.target.querySelector("img") || props.target.closest("img");
+    if (el instanceof HTMLImageElement && el.src) {
+        url = el.src;
+    } else {
+        const img = el.querySelector("img");
         if (img?.src) url = img.src;
+        else if (el.dataset?.src) url = el.dataset.src;
     }
 
     if (!url || isGifUrl(url)) return null;
     return url;
 }
 
-async function copyImageFromUrl(url: string) {
+export async function copyImageFromUrl(url: string) {
     try {
         const res = await fetch(url);
         const blob = await res.blob();
-        
-        // Ensure image/png for clipboard API compatibility
+
         const bitmap = await createImageBitmap(blob);
         const canvas = document.createElement("canvas");
         canvas.width = bitmap.width;
@@ -66,62 +67,112 @@ async function copyImageFromUrl(url: string) {
     }
 }
 
-const imageMenuPatch: NavContextMenuPatchCallback = (children, props) => {
-    const url = getImageUrl(props);
-    if (!url) return;
+// Hover button injection observer
+let hoverListener: ((e: MouseEvent) => void) | null = null;
 
-    if (children.some(child => child?.props?.id === "quick-copy-image")) return;
+function setupHoverObserver() {
+    hoverListener = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        if (!target) return;
 
-    const copyLinkGroup = findGroupChildrenByChildId("copy-link", children)
-        ?? findGroupChildrenByChildId("copy-native-link", children)
-        ?? children;
+        const wrapper = target.closest<HTMLElement>("[class*='imageWrapper'], [class*='imageContainer'], [class*='visualMediaItemContainer']");
+        if (!wrapper) return;
 
-    copyLinkGroup.unshift(
-        <Menu.MenuItem
-            label="Copy Image (Quick)"
-            key="quick-copy-image"
-            id="quick-copy-image"
-            leadingAccessory={{ type: "icon", icon: CopyIcon }}
-            action={() => copyImageFromUrl(url)}
-        />
-    );
-};
+        const existingBtn = wrapper.querySelector(`.${HOVER_BTN_CLASS}`);
+        const imgUrl = getImageUrlFromElement(wrapper);
 
-const messageMenuPatch: NavContextMenuPatchCallback = (children, props) => {
-    const url = getImageUrl(props);
-    if (!url) return;
+        if (!imgUrl) {
+            existingBtn?.remove();
+            return;
+        }
 
-    if (children.some(child => child?.props?.id === "quick-copy-image")) return;
+        if (existingBtn) return;
 
-    const copyGroup = findGroupChildrenByChildId("copy-link", children)
-        ?? findGroupChildrenByChildId("open-native-link", children);
+        // Create hover button
+        const btn = document.createElement("button");
+        btn.className = HOVER_BTN_CLASS;
+        btn.title = "Copy Image";
+        btn.innerHTML = `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z"/>
+            </svg>
+        `;
 
-    if (copyGroup && !copyGroup.some(child => child?.props?.id === "quick-copy-image")) {
-        copyGroup.unshift(
-            <Menu.MenuItem
-                label="Copy Image (Quick)"
-                key="quick-copy-image"
-                id="quick-copy-image"
-                leadingAccessory={{ type: "icon", icon: CopyIcon }}
-                action={() => copyImageFromUrl(url)}
-            />
-        );
+        Object.assign(btn.style, {
+            position: "absolute",
+            top: "8px",
+            right: "8px",
+            width: "32px",
+            height: "32px",
+            borderRadius: "6px",
+            backgroundColor: "rgba(0, 0, 0, 0.65)",
+            color: "#ffffff",
+            border: "none",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: "0",
+            transition: "opacity 0.15s ease, transform 0.15s ease, background-color 0.15s ease",
+            zIndex: "100",
+            backdropFilter: "blur(4px)"
+        });
+
+        const show = () => {
+            btn.style.opacity = "1";
+            btn.style.transform = "scale(1)";
+        };
+        const hide = () => {
+            btn.style.opacity = "0";
+            btn.style.transform = "scale(0.95)";
+        };
+
+        wrapper.style.position = wrapper.style.position || "relative";
+        wrapper.addEventListener("mouseenter", show);
+        wrapper.addEventListener("mouseleave", hide);
+
+        btn.addEventListener("mouseenter", () => {
+            btn.style.backgroundColor = "rgba(0, 0, 0, 0.85)";
+            btn.style.transform = "scale(1.08)";
+        });
+        btn.addEventListener("mouseleave", () => {
+            btn.style.backgroundColor = "rgba(0, 0, 0, 0.65)";
+            btn.style.transform = "scale(1)";
+        });
+
+        btn.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            const currentUrl = getImageUrlFromElement(wrapper);
+            if (currentUrl) copyImageFromUrl(currentUrl);
+        });
+
+        wrapper.appendChild(btn);
+        show();
+    };
+
+    document.addEventListener("mouseover", hoverListener, { passive: true });
+}
+
+function removeHoverObserver() {
+    if (hoverListener) {
+        document.removeEventListener("mouseover", hoverListener);
+        hoverListener = null;
     }
-};
+    document.querySelectorAll(`.${HOVER_BTN_CLASS}`).forEach(el => el.remove());
+}
 
 export default definePlugin({
     name: "QuickImageCopy",
-    description: "Adds a fast 1-click 'Copy Image (Quick)' button to non-GIF images with instant canvas PNG clipboard conversion.",
+    description: "Displays a clean 1-click 'Copy Image' button on non-GIF images when hovering, with automatic clipboard PNG conversion and toast alerts.",
     tags: ["Media", "Utility"],
     authors: [{ name: "Onyx", id: 0n }],
 
     start() {
-        addContextMenuPatch(["image-context", "message", "message-actions"], imageMenuPatch);
-        addContextMenuPatch("message", messageMenuPatch);
+        setupHoverObserver();
     },
 
     stop() {
-        removeContextMenuPatch(["image-context", "message", "message-actions"], imageMenuPatch);
-        removeContextMenuPatch("message", messageMenuPatch);
+        removeHoverObserver();
     }
 });
