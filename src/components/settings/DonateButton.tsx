@@ -28,7 +28,7 @@ export function DonateButton({
     className,
     ...props
 }: Partial<ButtonProps> & { equicord?: boolean; }) {
-    const link = equicord ? "https://github.com/sponsors/thororen1234" : "https://github.com/sponsors/Vendicated";
+    const link = "https://github.com/truevibecode/gooncord";
     return (
         <Button
             {...props}
@@ -39,7 +39,7 @@ export function DonateButton({
             className={className || "vc-donate-button"}
         >
             <Heart />
-            Donate
+            GitHub
         </Button>
     );
 }
@@ -54,15 +54,10 @@ export function InviteButton({
             variant="none"
             size="medium"
             type="button"
-            onClick={async e => {
-                e.preventDefault();
-                openInviteModal("wKgT9j2xfN").catch(() =>
-                    showToast("Invalid or expired invite"),
-                );
-            }}
+            onClick={() => VencordNative.native.openExternal("https://github.com/truevibecode/gooncord")}
             className={className || "vc-donate-button"}
         >
-            Invite
+            GitHub
             <OpenExternalIcon className="vc-invite-link" />
         </Button>
     );
