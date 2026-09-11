@@ -33,5 +33,10 @@ ExtensionCache/
 # vencord companion module cache
 .modules
 
+# zcode & agent ignore
+.zcode/
+.agents/
+AGENTS.md
+
 # wakatime related stuff
 .wakatime-project
