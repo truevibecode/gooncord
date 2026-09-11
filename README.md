@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="./assets/icon.png" width="120" alt="Gooncord Logo" />
+
 # Gooncord `v1.7`
 
 *A high-performance, lightweight Discord client modification.*

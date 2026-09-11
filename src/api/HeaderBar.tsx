@@ -242,6 +242,7 @@ function ChannelToolbarButtons() {
 /** @internal Injected by HeaderBarAPI patch (do NOT call directly) */
 export function _addHeaderBarButtons() {
     return [
+        <HeaderBarButtons key="vc-header-bar-buttons" />,
         <div
             key="custom-watermark"
             style={{
@@ -255,8 +256,7 @@ export function _addHeaderBarButtons() {
                 letterSpacing: "0.2px"
             }}>
             Gooncord v1.7 &lt;3
-        </div>,
-        <HeaderBarButtons key="vc-header-bar-buttons" />
+        </div>
     ];
 }
 
