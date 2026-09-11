@@ -227,6 +227,8 @@ async function init() {
                 "\n\n" + pendingPatches.map(p => `${p.plugin}: ${p.find}`).join("\n")
             );
     }
+    // Startup notice
+    console.log("%c[Gooncord v1.6]%c Ultra-performance build active (%s)", "color: #7289da; font-weight: bold; font-size: 14px;", "color: #43b581; font-weight: bold;", new Date().toLocaleTimeString());
 }
 
 initPluginManager();
