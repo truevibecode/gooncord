@@ -1,6 +1,6 @@
 <div align="center">
 
-# Gooncord
+# Gooncord `v1.7`
 
 *A high-performance, lightweight Discord client modification.*
 
