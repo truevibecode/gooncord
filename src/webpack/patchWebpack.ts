@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-import { Settings } from "@api/Settings";
+import { PlainSettings } from "@api/Settings";
 import { reporterData } from "@debug/reporterData";
 import { traceFunctionWithResults } from "@debug/Tracer";
 import { makeLazy } from "@utils/lazy";
@@ -17,6 +17,9 @@ import { AnyModuleFactory, AnyWebpackRequire, MaybePatchedModuleFactory, Patched
 import { _blacklistBadModules, _initWebpack, factoryListeners, findModuleFactory, moduleListeners, waitForSubscriptions, wreq } from "./webpack";
 
 export const patches = [] as Patch[];
+
+// Hoisted once: default false. Reading the proxied Settings per factory costs a trap each time.
+const EAGER_PATCHES = PlainSettings.eagerPatches === true;
 
 export const SYM_ORIGINAL_MODULE_FACTORIES = Symbol("WebpackPatcher.originalModuleFactories");
 export const SYM_IS_PROXIED_FACTORY = Symbol("WebpackPatcher.isProxiedFactory");
@@ -285,7 +288,8 @@ const moduleFactoryHandler: ProxyHandler<MaybePatchedModuleFactory> = {
 
 function proxyFactoryAndUpdateExisting(moduleFactories: AnyWebpackRequire["m"], moduleId: PropertyKey, newFactory: AnyModuleFactory, receiver: any, ignoreExistingInTarget = false) {
     notifyFactoryListeners(moduleId, newFactory);
-    const proxiedFactory = new Proxy(Settings.eagerPatches ? patchFactory(moduleId, newFactory) : newFactory, moduleFactoryHandler);
+    // Hoisted: Settings is a proxied store; reading per-factory (thousands at boot) pays trap each time.
+    const proxiedFactory = new Proxy(EAGER_PATCHES ? patchFactory(moduleId, newFactory) : newFactory, moduleFactoryHandler);
 
     if (updateExistingFactory(moduleFactories, moduleId, newFactory, proxiedFactory, ignoreExistingInTarget)) {
         return true;

@@ -490,7 +490,11 @@ export function findByCodeLazy(...code: CodeFilter) {
     return proxyLazy(() => findByCode(...code));
 }
 
+let fluxMapPopulated = false;
+const missingStores = new Set<string>();
 function populateFluxStoreMap() {
+    if (fluxMapPopulated) return;
+    fluxMapPopulated = true;
     const { Flux } = require("./common") as typeof import("./common");
 
     Flux.Store.getAll?.().forEach(store =>
@@ -518,20 +522,22 @@ function populateFluxStoreMap() {
  * Find a store by its displayName
  */
 export function findStore(name: StoreNameFilter) {
-    if (!fluxStores.has(name)) {
+    const hit = fluxStores.get(name);
+    if (hit) return hit;
+    if (!missingStores.has(name)) {
         populateFluxStoreMap();
-    }
-
-    if (fluxStores.has(name)) {
-        return fluxStores.get(name);
+        const hit2 = fluxStores.get(name);
+        if (hit2) return hit2;
     }
 
     const res = find(filters.byStoreName(name), { isIndirect: true });
     if (res) {
         fluxStores.set(name, res);
+        missingStores.delete(name);
         return res;
     }
 
+    missingStores.add(name);
     handleModuleNotFound("findStore", name);
     return null;
 }

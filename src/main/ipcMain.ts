@@ -199,8 +199,10 @@ app.on("before-quit", async event => {
 ipcMain.handle(IpcEvents.GET_RENDERER_CSS, () => readFile(RENDERER_CSS_PATH, "utf-8"));
 
 if (IS_DISCORD_DESKTOP) {
+    let cachedRendererJs: string | undefined;
     ipcMain.on(IpcEvents.PRELOAD_GET_RENDERER_JS, e => {
-        e.returnValue = readFileSync(join(__dirname, "renderer.js"), "utf-8");
+        cachedRendererJs ??= readFileSync(join(__dirname, "renderer.js"), "utf-8");
+        e.returnValue = cachedRendererJs;
     });
 }
 

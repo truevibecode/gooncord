@@ -203,10 +203,12 @@ export default definePlugin({
 
         useEffect(() => {
             if (formatTemplate.includes("calendar") || formatTemplate.includes("relative")) {
-                const interval = setInterval(forceUpdater, 1000);
+                // Was 1000ms per visible timestamp (50+ timers/sec). 30s keeps
+                // relative/calendar correct with 30x fewer wakeups.
+                const interval = setInterval(forceUpdater, 30000);
                 return () => clearInterval(interval);
             }
-        }, []);
+        }, [formatTemplate]);
 
         return format(date, formatTemplate);
     }

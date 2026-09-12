@@ -203,8 +203,12 @@ async function init() {
     await onceReady;
     startAllPlugins(StartAt.WebpackReady);
 
-    syncSettings();
-    initTrayIpc();
+    // Off critical path: cloud IDB + network + tray IPC don't block chat render.
+    const idle = (fn: () => void) => (window as any).requestIdleCallback?.(fn, { timeout: 15000 }) ?? setTimeout(fn, 3000);
+    idle(() => {
+        syncSettings();
+        initTrayIpc();
+    });
 
     if (!IS_DEV && !IS_WEB && !IS_UPDATER_DISABLED) {
         // Defer first update check to idle so it doesn't contend with Discord startup fetches
@@ -230,7 +234,7 @@ async function init() {
             );
     }
     // Startup notice
-    console.log("%c[Gooncord v1.8]%c Ultra-performance build active (%s)", "color: #7289da; font-weight: bold; font-size: 14px;", "color: #43b581; font-weight: bold;", new Date().toLocaleTimeString());
+    console.log("%c[Gooncord v1.9]%c Ultra-performance build active (%s)", "color: #7289da; font-weight: bold; font-size: 14px;", "color: #43b581; font-weight: bold;", new Date().toLocaleTimeString());
 }
 
 initPluginManager();
