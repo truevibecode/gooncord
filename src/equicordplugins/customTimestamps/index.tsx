@@ -32,11 +32,18 @@ type TimeRowProps = {
     pluginSettings: any;
 };
 
-moment.relativeTimeThreshold("s", 60);
-moment.relativeTimeThreshold("ss", -1);
-moment.relativeTimeThreshold("m", 60);
-
+let thresholdsInit = false;
 const format = (date: Date, formatTemplate: string): string => {
+    // Lazy one-time init (NOT top-level): moment is a webpack lazy, unavailable at bundle eval.
+    // Doing this at import time throws and kills the whole renderer -> vanilla Discord.
+    if (!thresholdsInit) {
+        thresholdsInit = true;
+        try {
+            moment.relativeTimeThreshold("s", 60);
+            moment.relativeTimeThreshold("ss", -1);
+            moment.relativeTimeThreshold("m", 60);
+        } catch { }
+    }
     const mmt = moment(date);
 
     const sameDayFormat = settings.store?.formats?.sameDayFormat || timeFormats.sameDayFormat.default;
