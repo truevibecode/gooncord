@@ -29,6 +29,9 @@ import type { AnyModuleFactory, AnyWebpackRequire } from "./types";
 
 const logger = new Logger("Webpack");
 
+// Cache Function -> source string to avoid repeated toString() in byCode filters
+const fnSourceCache = new WeakMap<Function, string>();
+
 export let _resolveReady: () => void;
 /**
  * Fired once a gateway connection to Discord has been established.
@@ -68,7 +71,12 @@ export const filters = {
         const parsedCode = code.map(canonicalizeMatch);
         const filter = m => {
             if (typeof m !== "function") return false;
-            return stringMatches(Function.prototype.toString.call(m), parsedCode);
+            let str: string | undefined = fnSourceCache.get(m);
+            if (str === undefined) {
+                str = Function.prototype.toString.call(m);
+                fnSourceCache.set(m, str);
+            }
+            return stringMatches(str, parsedCode);
         };
 
         filter.$$vencordProps = [...code];
@@ -359,14 +367,22 @@ export const findBulk = traceFunction("findBulk", function findBulk(...filterFns
  * Find the id of the first module factory that includes all the given code
  * @returns string or null
  */
+const findModuleIdCache = new Map<string, string | null>();
 export const findModuleId = traceFunction("findModuleId", function findModuleId(...code: CodeFilter) {
-    code = code.map(canonicalizeMatch);
+    const cacheKey = code.map(c => String(c)).join("\n");
+    if (findModuleIdCache.has(cacheKey)) return findModuleIdCache.get(cacheKey)!;
+
+    const canonicalized = code.map(canonicalizeMatch);
 
     for (const id in wreq.m) {
-        if (stringMatches(wreq.m[id].toString(), code)) return id;
+        if (stringMatches(wreq.m[id].toString(), canonicalized)) {
+            if (findModuleIdCache.size > 500) findModuleIdCache.clear();
+            findModuleIdCache.set(cacheKey, id);
+            return id;
+        }
     }
 
-    const err = new Error("Didn't find module with code(s):\n" + code.join("\n"));
+    const err = new Error("Didn't find module with code(s):\n" + canonicalized.join("\n"));
     if (IS_DEV) {
         if (!devToolsOpen)
             // Strict behaviour in DevBuilds to fail early and make sure the issue is found
@@ -375,6 +391,8 @@ export const findModuleId = traceFunction("findModuleId", function findModuleId(
         logger.warn(err);
     }
 
+    if (findModuleIdCache.size > 500) findModuleIdCache.clear();
+    findModuleIdCache.set(cacheKey, null);
     return null;
 });
 

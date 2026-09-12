@@ -207,7 +207,9 @@ async function init() {
     initTrayIpc();
 
     if (!IS_DEV && !IS_WEB && !IS_UPDATER_DISABLED) {
-        runUpdateCheck();
+        // Defer first update check to idle so it doesn't contend with Discord startup fetches
+        const defer = (fn: () => void) => (window as any).requestIdleCallback?.(fn, { timeout: 15000 }) ?? setTimeout(fn, 15000);
+        defer(runUpdateCheck);
 
         // this tends to get really annoying, so only do this if the user has auto-update without notification enabled
         if (Settings.autoUpdate && !Settings.autoUpdateNotification) {
@@ -228,7 +230,7 @@ async function init() {
             );
     }
     // Startup notice
-    console.log("%c[Gooncord v1.7]%c Ultra-performance build active (%s)", "color: #7289da; font-weight: bold; font-size: 14px;", "color: #43b581; font-weight: bold;", new Date().toLocaleTimeString());
+    console.log("%c[Gooncord v1.8]%c Ultra-performance build active (%s)", "color: #7289da; font-weight: bold; font-size: 14px;", "color: #43b581; font-weight: bold;", new Date().toLocaleTimeString());
 }
 
 initPluginManager();

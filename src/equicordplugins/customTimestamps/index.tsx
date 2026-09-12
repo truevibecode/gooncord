@@ -32,26 +32,29 @@ type TimeRowProps = {
     pluginSettings: any;
 };
 
+moment.relativeTimeThreshold("s", 60);
+moment.relativeTimeThreshold("ss", -1);
+moment.relativeTimeThreshold("m", 60);
+
 const format = (date: Date, formatTemplate: string): string => {
     const mmt = moment(date);
-
-    moment.relativeTimeThreshold("s", 60);
-    moment.relativeTimeThreshold("ss", -1);
-    moment.relativeTimeThreshold("m", 60);
 
     const sameDayFormat = settings.store?.formats?.sameDayFormat || timeFormats.sameDayFormat.default;
     const lastDayFormat = settings.store?.formats?.lastDayFormat || timeFormats.lastDayFormat.default;
     const lastWeekFormat = settings.store?.formats?.lastWeekFormat || timeFormats.lastWeekFormat.default;
     const sameElseFormat = settings.store?.formats?.sameElseFormat || timeFormats.sameElseFormat.default;
 
-    return mmt.format(formatTemplate)
-        .replace("calendar", () => mmt.calendar(null, {
+    let out = mmt.format(formatTemplate);
+    if (formatTemplate.includes("calendar"))
+        out = out.replace("calendar", () => mmt.calendar(null, {
             sameDay: sameDayFormat,
             lastDay: lastDayFormat,
             lastWeek: lastWeekFormat,
             sameElse: sameElseFormat
-        }))
-        .replace("relative", () => mmt.fromNow());
+        }));
+    if (formatTemplate.includes("relative"))
+        out = out.replace("relative", () => mmt.fromNow());
+    return out;
 };
 
 const TimeRow = (props: TimeRowProps) => {

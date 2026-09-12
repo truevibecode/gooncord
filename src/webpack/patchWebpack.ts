@@ -513,11 +513,16 @@ function patchFactory(moduleId: PropertyKey, originalFactory: AnyModuleFactory):
 
     const patchedBy = new Set<string>();
 
+    if (patches.length === 0) {
+        (originalFactory as PatchedModuleFactory)[SYM_ORIGINAL_FACTORY] = originalFactory;
+        return originalFactory as PatchedModuleFactory;
+    }
+
+    const buildNumber = getBuildNumber();
+    const shouldCheckBuildNumber = buildNumber !== -1;
+
     for (let i = 0; i < patches.length; i++) {
         const patch = patches[i];
-
-        const buildNumber = getBuildNumber();
-        const shouldCheckBuildNumber = buildNumber !== -1;
 
         if (
             shouldCheckBuildNumber &&

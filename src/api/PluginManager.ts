@@ -130,17 +130,25 @@ export function pluginRequiresRestart(p: Plugin) {
     return p.requiresRestart !== false && (p.requiresRestart || !!p.patches?.length);
 }
 
+const pluginsByStartAt = new Map<StartAt, Plugin[]>();
+
 export const startAllPlugins = traceFunction("startAllPlugins", function startAllPlugins(target: StartAt) {
-    logger.info(`Starting plugins (stage ${target})`);
-    for (const name in Plugins) {
-        if (isPluginEnabled(name) && (!IS_REPORTER || isReporterTestable(Plugins[name], ReporterTestable.Start))) {
-            const p = Plugins[name];
-
-            const startAt = p.startAt ?? StartAt.WebpackReady;
-            if (startAt !== target) continue;
-
-            startPlugin(Plugins[name]);
+    if (IS_REPORTER) {
+        logger.info(`Starting plugins (stage ${target})`);
+        for (const name in Plugins) {
+            if (isPluginEnabled(name) && isReporterTestable(Plugins[name], ReporterTestable.Start)) {
+                const p = Plugins[name];
+                if ((p.startAt ?? StartAt.WebpackReady) !== target) continue;
+                startPlugin(Plugins[name]);
+            }
         }
+        return;
+    }
+    // Fast path: only iterate plugins registered for this StartAt stage.
+    const list = pluginsByStartAt.get(target);
+    if (!list) return;
+    for (const p of list) {
+        if (isPluginEnabled(p.name)) startPlugin(p);
     }
 });
 
@@ -448,6 +456,11 @@ export const initPluginManager = onlyOnce(function init() {
                     SettingsStore.addChangeListener(`plugins.${p.name}.${key}`, def.onChange);
             }
         }
+
+        const stage = p.startAt ?? StartAt.WebpackReady;
+        let bucket = pluginsByStartAt.get(stage);
+        if (!bucket) pluginsByStartAt.set(stage, bucket = []);
+        bucket.push(p);
 
         if (p.patches && isPluginEnabled(p.name)) {
             if (!IS_REPORTER || isReporterTestable(p, ReporterTestable.Patches)) {
