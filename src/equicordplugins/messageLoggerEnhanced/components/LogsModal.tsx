@@ -188,11 +188,12 @@ function LogsContent({ visibleMessages, canLoadMore, sortNewest, tab, reset, han
 
     // Read once per list render, not per row (settings proxy trap per row otherwise).
     const showFrom = settings.store.ShowWhereMessageIsFrom;
+    const MemoRow = getLMessageMemo();
     return (
         <div className={cl("modal-content-inner")}>
             {visibleMessages
                 .map(({ message }, i) => (
-                    <LMessageMemo
+                    <MemoRow
                         key={message.id}
                         message={message}
                         reset={reset}
@@ -303,7 +304,14 @@ function LMessageCompare(a: LMessageProps, b: LMessageProps) {
         && a.showFrom === b.showFrom
         && (a.message.editHistory?.length ?? 0) === (b.message.editHistory?.length ?? 0);
 }
-const LMessageMemo = React.memo(LMessage, LMessageCompare);
+// Lazily created at first render, NOT module top-level: React from
+// @webpack/common is an unassigned `let` until Discord's webpack loads, so
+// calling React.memo at import time throws and kills the whole renderer.
+let LMessageMemo: any = null;
+function getLMessageMemo() {
+    if (!LMessageMemo) LMessageMemo = React.memo(LMessage, LMessageCompare);
+    return LMessageMemo;
+}
 function LMessage({ message: loggedMessage, isGroupStart, showFrom, reset, }: LMessageProps) {
     const log = useMemo(() => ({ message: loggedMessage }), [loggedMessage]);
     const message = useMemo(() => messageJsonToMessageClass(log), [log]);
