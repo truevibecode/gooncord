@@ -100,6 +100,11 @@
     padding-right: 20px;
 }
 
+.vc-msg-logger-enhanced-modal-msg-row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 120px;
+}
+
 .vc-msg-logger-enhanced-modal-filter {
     width: 106%;
 }

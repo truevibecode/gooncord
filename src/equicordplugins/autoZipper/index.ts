@@ -9,7 +9,6 @@ import { EquicordDevs } from "@utils/constants";
 import { Logger } from "@utils/Logger";
 import definePlugin, { OptionType } from "@utils/types";
 import { ChannelStore, DraftType, SelectedChannelStore, UploadHandler } from "@webpack/common";
-import { zipSync } from "fflate";
 
 const logger = new Logger("AutoZipper");
 
@@ -48,6 +47,8 @@ async function zipFile(file: File): Promise<File> {
     const arrayBuffer = await file.arrayBuffer();
     const data = new Uint8Array(arrayBuffer);
 
+    // Loaded on demand: fflate only needed when zipping an upload.
+    const { zipSync } = await import("fflate");
     const zipData = zipSync({
         [file.name]: data
     });
@@ -57,6 +58,8 @@ async function zipFile(file: File): Promise<File> {
 }
 
 async function zipFolder(folderName: string, fileEntries: Record<string, Uint8Array>): Promise<File> {
+    // Loaded on demand: fflate only needed when zipping an upload.
+    const { zipSync } = await import("fflate");
     const zipData = zipSync(fileEntries);
     return new File([zipData as BlobPart], `${folderName}.zip`, { type: "application/zip" });
 }

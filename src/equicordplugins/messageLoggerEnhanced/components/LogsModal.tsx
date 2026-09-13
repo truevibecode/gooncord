@@ -186,14 +186,17 @@ function LogsContent({ visibleMessages, canLoadMore, sortNewest, tab, reset, han
     if (visibleMessages.length === 0)
         return <NoResults tab={tab} />;
 
+    // Read once per list render, not per row (settings proxy trap per row otherwise).
+    const showFrom = settings.store.ShowWhereMessageIsFrom;
     return (
         <div className={cl("modal-content-inner")}>
             {visibleMessages
                 .map(({ message }, i) => (
-                    <LMessage
+                    <LMessageMemo
                         key={message.id}
-                        log={{ message }}
+                        message={message}
                         reset={reset}
+                        showFrom={showFrom}
                         isGroupStart={isGroupStart(message, visibleMessages[i - 1]?.message, sortNewest)}
                     />
                 ))}
@@ -287,11 +290,22 @@ function LoadingLogs({ tab }: { tab: LogTabs; }) {
 }
 
 interface LMessageProps {
-    log: { message: LoggedMessageJSON; };
+    message: LoggedMessageJSON;
     isGroupStart: boolean,
+    showFrom: boolean,
     reset: () => void;
 }
-function LMessage({ log, isGroupStart, reset, }: LMessageProps) {
+// Memo: rows previously re-rendered on every parent update (new wrapper identity each map).
+// Compare by stable id + group + flag; message objects are stable unless reloaded.
+function LMessageCompare(a: LMessageProps, b: LMessageProps) {
+    return a.message.id === b.message.id
+        && a.isGroupStart === b.isGroupStart
+        && a.showFrom === b.showFrom
+        && (a.message.editHistory?.length ?? 0) === (b.message.editHistory?.length ?? 0);
+}
+const LMessageMemo = React.memo(LMessage, LMessageCompare);
+function LMessage({ message: loggedMessage, isGroupStart, showFrom, reset, }: LMessageProps) {
+    const log = useMemo(() => ({ message: loggedMessage }), [loggedMessage]);
     const message = useMemo(() => messageJsonToMessageClass(log), [log]);
 
     if (!message) return null;
@@ -301,6 +315,7 @@ function LMessage({ log, isGroupStart, reset, }: LMessageProps) {
 
     return (
         <div
+            className={cl("modal-msg-row")}
             onContextMenu={e => {
                 ContextMenuApi.openContextMenu(e, () =>
                     <Menu.Menu
@@ -390,13 +405,13 @@ function LMessage({ log, isGroupStart, reset, }: LMessageProps) {
                 isGroupStart={isGroupStart}
                 hideSimpleEmbedContent={false}
             />
-            {settings.store.ShowWhereMessageIsFrom && channel?.isDM() && message?.author && (
+            {showFrom && channel?.isDM() && message?.author && (
                 <span className={`${cl("modal-from")} ${message.deleted ? cl("modal-from-deleted") : cl("modal-from-edited")}`}>From {message.author.username}'s DMs</span>
             )}
-            {settings.store.ShowWhereMessageIsFrom && channel?.isGroupDM() && channel?.name && (
+            {showFrom && channel?.isGroupDM() && channel?.name && (
                 <span className={`${cl("modal-from")} ${message.deleted ? cl("modal-from-deleted") : cl("modal-from-edited")}`}>From {channel.name} Group DM</span>
             )}
-            {settings.store.ShowWhereMessageIsFrom && !channel?.isDM() && !channel?.isGroupDM() && channel?.name && guild?.name && (
+            {showFrom && !channel?.isDM() && !channel?.isGroupDM() && channel?.name && guild?.name && (
                 <span className={`${cl("modal-from")} ${message.deleted ? cl("modal-from-deleted") : cl("modal-from-edited")}`}>From {channel.name} in {guild.name}</span>
             )}
         </div>

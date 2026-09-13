@@ -16,10 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import JSONParser from "@streamparser/json/jsonparser.js";
 import { chooseFile as chooseFileWeb } from "@utils/web";
 import { Toasts } from "@webpack/common";
-import { showSaveFilePicker } from "native-file-system-adapter";
 
 import { clearLogs,Native } from "..";
 import { addMessagesBulkIDB, iterateAllMessagesIDB } from "../db";
@@ -116,6 +114,8 @@ export async function exportLogs() {
 
         // if check needed so esbuild doenst include native-file-system-adapter in native builds
         if (IS_WEB) {
+            // Loaded on demand: file picker polyfill only needed for web export.
+            const { showSaveFilePicker } = await import("native-file-system-adapter");
             const handle = await showSaveFilePicker({
                 suggestedName: filename,
                 types: [{
@@ -161,6 +161,8 @@ export async function exportLogs() {
 }
 
 async function* parseJsonStream(readChunk: () => Promise<string | null>) {
+    // Loaded on demand: streaming parser only needed for log import.
+    const { default: JSONParser } = await import("@streamparser/json/jsonparser.js");
     const parser = new JSONParser({
         paths: ["$.messages.*"],
         keepStack: false,

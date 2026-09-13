@@ -6,8 +6,7 @@
 
 import { sleep } from "@utils/misc";
 import type { PluginNative } from "@utils/types";
-import { applyPalette, GIFEncoder, quantize } from "gifenc";
-import { decompressFrames, parseGIF } from "gifuct-js";
+// Loaded on demand inside encode/parse fns: gifenc+gifuct-js only needed when creating a gif.
 
 import { CAPTIONS } from "../captions";
 import { measureTextLines } from "../captions/caption";
@@ -206,6 +205,7 @@ async function encodeFrames(
         offset += data.length;
     }
 
+    const { applyPalette, GIFEncoder, quantize } = await import("gifenc");
     const palette = quantize(combined, PALETTE_COLORS);
     const gif = GIFEncoder();
 
@@ -471,6 +471,7 @@ async function getVideoSourceInfo(url: string): Promise<SourceFrameInfo | null> 
 
 async function createGifFromAnimatedImage(url: string, options: GifMakerOptions): Promise<Blob> {
     const bytes = await fetchFullGifBytes(url);
+    const { decompressFrames, parseGIF } = await import("gifuct-js");
     const parsedGif = parseGIF(bytes.buffer as ArrayBuffer);
     const frames = decompressFrames(parsedGif, true);
 
