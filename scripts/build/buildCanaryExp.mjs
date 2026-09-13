@@ -126,18 +126,20 @@ const buildConfigs = ([
             IS_EQUIBOP: "false"
         }
     },
-    // Canary-exp renderer: ESM + splitting so dynamic imports become real chunks.
+    // Canary-exp renderer: SINGLE FILE iife (same proven loader as Stable).
+    // The ESM split variant white-screened: Discord's CSP blocks file://
+    // chunk fetches, so the whole entry died -> vanilla. All code-level
+    // opts below still apply (memo rows, lazy constructors, deferred work);
+    // only the ~200kb parse saving is given up until a CSP-safe chunk
+    // loader exists. See src/preloadCanaryExp.ts (kept for reference).
     {
         ...commonOpts,
         entryPoints: [join(dirname(fileURLToPath(import.meta.url)), "../../src/Vencord.ts")],
-        outdir: "dist/canary-exp",
-        entryNames: "renderer",
-        chunkNames: "chunks/[name]-[hash]",
-        assetNames: "assets/[name]-[hash]",
-        format: "esm",
-        splitting: true,
+        outfile: "dist/canary-exp/renderer.js",
+        format: "iife",
         target: ["esnext"],
         footer: { js: "//# sourceURL=file:///VencordRenderer\n" + sourceMapFooter("renderer") },
+        globalName: "Vencord",
         sourcemap,
         metafile: true,
         plugins: [
@@ -151,10 +153,10 @@ const buildConfigs = ([
             IS_EQUIBOP: "false"
         }
     },
-    // Canary-exp preload: loads renderer via dynamic file:// import.
+    // Canary-exp preload: standard loader (proven executeJavaScript path).
     {
         ...nodeCommonOpts,
-        entryPoints: [join(dirname(fileURLToPath(import.meta.url)), "../../src/preloadCanaryExp.ts")],
+        entryPoints: [join(dirname(fileURLToPath(import.meta.url)), "../../src/preload.ts")],
         outfile: "dist/canary-exp/preload.js",
         footer: { js: "//# sourceURL=file:///VencordPreload\n" + sourceMapFooter("preload") },
         sourcemap,
@@ -181,14 +183,3 @@ await writeFile("dist/canary-exp/package.json", JSON.stringify({
     name: "equicord",
     main: "patcher.js"
 }));
-
-if (results[1]) {
-    await writeFile("dist/canary-exp/meta.json", JSON.stringify(results[1]));
-    const outputs = results[1].outputs;
-    const rows = Object.entries(outputs)
-        .map(([name, meta]) => ({ name, bytes: meta.bytes }))
-        .sort((a, b) => b.bytes - a.bytes)
-        .slice(0, 25);
-    console.log("\n[canary-exp] largest outputs:");
-    for (const r of rows) console.log(`  ${(r.bytes / 1024).toFixed(1)}kb  ${r.name}`);
-}
