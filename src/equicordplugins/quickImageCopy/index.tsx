@@ -124,9 +124,13 @@ export async function downloadMediaFromUrl(url: string) {
         const a = document.createElement("a");
         a.href = blobUrl;
 
-        // Determine extension
-        const urlObj = new URL(url);
-        const pathname = urlObj.pathname;
+        // Determine extension (URL may be blob:/relative, so guard the parse)
+        let pathname: string;
+        try {
+            pathname = new URL(url).pathname;
+        } catch {
+            pathname = url.split("?")[0];
+        }
         const originalName = pathname.substring(pathname.lastIndexOf("/") + 1) || "download";
         const dotIndex = originalName.lastIndexOf(".");
         const ext = dotIndex !== -1 ? originalName.substring(dotIndex) : (isGifUrl(url) ? ".gif" : ".png");
@@ -151,46 +155,72 @@ export async function downloadMediaFromUrl(url: string) {
 }
 
 let hoverListener: ((e: MouseEvent) => void) | null = null;
+const wiredWrappers = new WeakSet<HTMLElement>();
+const wrapperAbort = new WeakMap<HTMLElement, AbortController>();
+let gcObserver: MutationObserver | null = null;
 
 function setupHoverObserver() {
     hoverListener = (e: MouseEvent) => {
         const target = e.target as HTMLElement;
-        if (!target) return;
+        if (!target || !document.contains(target)) return;
 
         const wrapper = target.closest<HTMLElement>(
             "[class*='imageWrapper'], [class*='imageContainer'], [class*='visualMediaItemContainer'], [class*='mediaItem']"
         );
-        if (!wrapper) return;
+        if (!wrapper || !document.contains(wrapper)) return;
 
-        const existingContainer = wrapper.querySelector(`.${HOVER_CONTAINER_CLASS}`);
-        const mediaUrl = getMediaUrlFromElement(wrapper);
+        // Prefer the tightest wrapper so the strip anchors on the image,
+        // not on a broad grid/carousel box (fixes "middle of client").
+        const tight = (target as HTMLElement).closest<HTMLElement>("[class*='imageWrapper']") ?? wrapper;
+        const anchor = tight.contains(target as Node) ? tight : wrapper;
 
-        if (!mediaUrl) {
-            existingContainer?.remove();
+        // Guard: viewport-sized or empty anchor = wrong match, skip.
+        const rect = anchor.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) return;
+        if (rect.width >= window.innerWidth * 0.92 && rect.height >= window.innerHeight * 0.92) return;
+        // Guard: anchor must actually contain an image.
+        if (!(anchor instanceof HTMLImageElement) && !anchor.querySelector("img")) return;
+
+        const existingContainer = anchor.querySelector(`:scope > .${HOVER_CONTAINER_CLASS}`);
+        if (existingContainer && !wiredWrappers.has(anchor)) {
+            existingContainer.remove(); // cloned ghost from React recycle, rebuild below
+        } else if (existingContainer) {
             return;
         }
 
-        if (existingContainer) return;
+        const mediaUrl = getMediaUrlFromElement(anchor);
 
-        // Container holding both Copy & Download buttons
+        if (!mediaUrl) {
+            anchor.querySelector(`:scope > .${HOVER_CONTAINER_CLASS}`)?.remove();
+            return;
+        }
+
+        // Container holding both Copy & Download buttons, docked top-LEFT
+        // so it never covers Discord's native top-right edit actions.
         const container = document.createElement("div");
         container.className = HOVER_CONTAINER_CLASS;
         Object.assign(container.style, {
             position: "absolute",
             top: "8px",
-            right: "8px",
+            left: "8px",
+            right: "auto",
             display: "flex",
+            flexDirection: "row",
             gap: "6px",
+            maxWidth: "calc(100% - 16px)",
             zIndex: "100",
             opacity: "0",
+            visibility: "hidden",
             transform: "scale(0.95)",
-            transition: "opacity 0.15s ease, transform 0.15s ease",
-            pointerEvents: "auto"
+            transition: "opacity 0.15s ease, transform 0.15s ease, visibility 0.15s",
+            pointerEvents: "none"
         });
 
         const makeBtn = (title: string, svgPath: string, onClick: () => void) => {
             const btn = document.createElement("button");
+            btn.type = "button";
             btn.title = title;
+            btn.setAttribute("aria-label", title);
             btn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="${svgPath}"/></svg>`;
             Object.assign(btn.style, {
                 width: "30px",
@@ -229,7 +259,7 @@ function setupHoverObserver() {
             "Copy Media",
             "M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z",
             () => {
-                const cur = getMediaUrlFromElement(wrapper);
+                const cur = getMediaUrlFromElement(anchor);
                 if (cur) copyMediaFromUrl(cur);
             }
         );
@@ -241,7 +271,7 @@ function setupHoverObserver() {
                 "Download Media",
                 "M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z",
                 () => {
-                    const cur = getMediaUrlFromElement(wrapper);
+                    const cur = getMediaUrlFromElement(anchor);
                     if (cur) downloadMediaFromUrl(cur);
                 }
             );
@@ -250,22 +280,58 @@ function setupHoverObserver() {
 
         const show = () => {
             container.style.opacity = "1";
+            container.style.visibility = "visible";
+            container.style.pointerEvents = "auto";
             container.style.transform = "scale(1)";
         };
         const hide = () => {
             container.style.opacity = "0";
+            container.style.visibility = "hidden";
+            container.style.pointerEvents = "none";
             container.style.transform = "scale(0.95)";
         };
 
-        wrapper.style.position = wrapper.style.position || "relative";
-        wrapper.addEventListener("mouseenter", show);
-        wrapper.addEventListener("mouseleave", hide);
+        // Correct positioned ancestor: respect computed style instead of
+        // blindly downgrading sticky/fixed wrappers to relative.
+        if (getComputedStyle(anchor).position === "static") {
+            anchor.style.position = "relative";
+        }
 
-        wrapper.appendChild(container);
+        // Abortable per-wrapper listeners so stop()/recycle can clean up.
+        // mouseleave alone gets missed on fast moves/scroll; pointerleave covers it.
+        wrapperAbort.get(anchor)?.abort();
+        const ac = new AbortController();
+        wrapperAbort.set(anchor, ac);
+        anchor.addEventListener("mouseenter", show, { signal: ac.signal });
+        anchor.addEventListener("mouseleave", hide, { signal: ac.signal });
+        anchor.addEventListener("pointerleave", hide, { signal: ac.signal });
+        wiredWrappers.add(anchor);
+
+        anchor.appendChild(container);
         show();
     };
 
     document.addEventListener("mouseover", hoverListener, { passive: true });
+
+    // GC: drop orphaned strips when React recycles/removes wrappers.
+    gcObserver?.disconnect();
+    gcObserver = new MutationObserver(muts => {
+        for (const m of muts) {
+            m.removedNodes.forEach(n => {
+                if (!(n instanceof HTMLElement)) return;
+                if (n.classList?.contains(HOVER_CONTAINER_CLASS)) return;
+                if (n.matches?.("[class*='imageWrapper'],[class*='imageContainer'],[class*='visualMediaItemContainer'],[class*='mediaItem']")) {
+                    n.querySelector(`.${HOVER_CONTAINER_CLASS}`)?.remove();
+                    wrapperAbort.get(n as HTMLElement)?.abort();
+                }
+                n.querySelectorAll?.(`.${HOVER_CONTAINER_CLASS}`).forEach(el => {
+                    const w = el.parentElement;
+                    if (!w || !document.contains(w) || !w.querySelector("img")) el.remove();
+                });
+            });
+        }
+    });
+    gcObserver.observe(document.body, { childList: true, subtree: true });
 }
 
 function removeHoverObserver() {
@@ -273,6 +339,8 @@ function removeHoverObserver() {
         document.removeEventListener("mouseover", hoverListener);
         hoverListener = null;
     }
+    gcObserver?.disconnect();
+    gcObserver = null;
     document.querySelectorAll(`.${HOVER_CONTAINER_CLASS}`).forEach(el => el.remove());
 }
 

@@ -5,7 +5,7 @@
  */
 
 import { getMimeFromExtension } from "@equicordplugins/fileUpload/utils/getMediaUrl";
-import { FFmpeg } from "@ffmpeg/ffmpeg";
+import type { FFmpeg } from "@ffmpeg/ffmpeg";
 import { insertTextIntoChatInputBox, MessageOptions } from "@utils/discord";
 import { CloudUploadPlatform } from "@vencord/discord-types/enums";
 import { ChannelStore, CloudUploader, Constants, DraftStore, FluxDispatcher, MessageActions, PendingReplyStore, RestAPI, showToast, SnowflakeUtils, Toasts, UploadHandler } from "@webpack/common";
@@ -22,7 +22,18 @@ type SendStickerOptions = {
     ffmpegState?: FFmpegState;
 };
 
-export const ffmpeg = new FFmpeg();
+let _sharedFFmpeg: FFmpeg | null = null;
+/**
+ * Lazily constructs the shared instance on demand (was top-level `new FFmpeg()`
+ * at import time). Nothing in-tree uses it; kept for compat.
+ */
+export async function getSharedFFmpeg(): Promise<FFmpeg> {
+    if (!_sharedFFmpeg) {
+        const { FFmpeg: FF } = await import("@ffmpeg/ffmpeg");
+        _sharedFFmpeg = new FF();
+    }
+    return _sharedFFmpeg;
+}
 
 async function resizeImage(url: string) {
     const originalImage = new Image();

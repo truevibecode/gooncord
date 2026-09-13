@@ -9,7 +9,7 @@
  * by Leko and Arjix (src/equicordplugins/moreStickers/utils.tsx)
  */
 
-import { FFmpeg } from "@ffmpeg/ffmpeg";
+import type { FFmpeg } from "@ffmpeg/ffmpeg";
 
 let ffmpeg: FFmpeg | null = null;
 let ffmpegLoaded = false;
@@ -26,6 +26,8 @@ async function loadFFmpeg(): Promise<FFmpeg> {
     }
 
     ffmpegLoading = (async () => {
+        // Loaded on demand: ffmpeg core only needed when converting an APNG.
+        const { FFmpeg } = await import("@ffmpeg/ffmpeg");
         ffmpeg = new FFmpeg();
 
         const baseURL = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/esm";
