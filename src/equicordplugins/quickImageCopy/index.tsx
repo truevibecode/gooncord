@@ -12,6 +12,20 @@ import { Menu, showToast, Toasts } from "@webpack/common";
 
 const HOVER_CONTAINER_CLASS = "gc-quick-media-actions-container";
 
+// Discord's favourite star (native gif button + favouriteAnything accessory)
+// docks top-left on images. Our strip sits right of it instead of on top.
+const FAV_SELECTORS = '[class*="gifFavoriteButton"], [class*="favoriteButton"], [class*="favourite"]';
+function favRightOffset(anchor: HTMLElement): number {
+    const scope = anchor.parentElement ?? anchor;
+    const fav = scope.querySelector(FAV_SELECTORS) as HTMLElement | null;
+    if (!fav) return 8;
+    const a = anchor.getBoundingClientRect();
+    const f = fav.getBoundingClientRect();
+    // Hidden or detached fav = ignore, fall back to corner.
+    if ((f.width === 0 && f.height === 0) || f.bottom < a.top || f.top > a.bottom) return 8;
+    return Math.max(8, Math.round(f.right - a.left + 6));
+}
+
 export const settings = definePluginSettings({
     allowGifs: {
         type: OptionType.BOOLEAN,
@@ -279,6 +293,8 @@ function setupHoverObserver() {
         }
 
         const show = () => {
+            // Re-measure each hover: fav star fades in late on GIFs.
+            container.style.left = `${favRightOffset(anchor)}px`;
             container.style.opacity = "1";
             container.style.visibility = "visible";
             container.style.pointerEvents = "auto";
