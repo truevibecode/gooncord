@@ -20,6 +20,14 @@ import { runtimeHashMessageKey } from "./intlHash";
 import { Patch, PatchReplacement, ReplaceFn } from "./types";
 
 const canonMatchMemo = new Map<string, string | RegExp>();
+function evictCanonMemo() {
+    // Evict oldest ~200 instead of clear(): avoids thundering re-search after wipe.
+    let n = 0;
+    for (const k of canonMatchMemo.keys()) {
+        canonMatchMemo.delete(k);
+        if (++n >= 200) break;
+    }
+}
 export function canonicalizeMatch<T extends RegExp | string>(match: T): T {
     const memoKey = typeof match === "string" ? "s:" + match : "r:" + match.source + "\n" + match.flags + "\n" + match.toString();
     const memoHit = canonMatchMemo.get(memoKey);
@@ -42,7 +50,7 @@ export function canonicalizeMatch<T extends RegExp | string>(match: T): T {
     });
 
     if (typeof match === "string") {
-        if (canonMatchMemo.size > 2000) canonMatchMemo.clear();
+        if (canonMatchMemo.size > 2000) evictCanonMemo();
         canonMatchMemo.set(memoKey, partialCanon);
         return partialCanon as T;
     }
@@ -55,7 +63,7 @@ export function canonicalizeMatch<T extends RegExp | string>(match: T): T {
     const canonRegex = new RegExp(canonSource, match.flags);
     canonRegex.toString = match.toString.bind(match);
 
-    if (canonMatchMemo.size > 2000) canonMatchMemo.clear();
+    if (canonMatchMemo.size > 2000) evictCanonMemo();
     canonMatchMemo.set(memoKey, canonRegex);
     return canonRegex as T;
 }

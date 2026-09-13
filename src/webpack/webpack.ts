@@ -368,6 +368,13 @@ export const findBulk = traceFunction("findBulk", function findBulk(...filterFns
  * @returns string or null
  */
 const findModuleIdCache = new Map<string, string | null>();
+function evictModuleIdCache() {
+    let n = 0;
+    for (const k of findModuleIdCache.keys()) {
+        findModuleIdCache.delete(k);
+        if (++n >= 100) break;
+    }
+}
 export const findModuleId = traceFunction("findModuleId", function findModuleId(...code: CodeFilter) {
     const cacheKey = code.map(c => String(c)).join("\n");
     if (findModuleIdCache.has(cacheKey)) return findModuleIdCache.get(cacheKey)!;
@@ -376,7 +383,7 @@ export const findModuleId = traceFunction("findModuleId", function findModuleId(
 
     for (const id in wreq.m) {
         if (stringMatches(wreq.m[id].toString(), canonicalized)) {
-            if (findModuleIdCache.size > 500) findModuleIdCache.clear();
+            if (findModuleIdCache.size > 500) evictModuleIdCache();
             findModuleIdCache.set(cacheKey, id);
             return id;
         }
@@ -391,7 +398,7 @@ export const findModuleId = traceFunction("findModuleId", function findModuleId(
         logger.warn(err);
     }
 
-    if (findModuleIdCache.size > 500) findModuleIdCache.clear();
+    if (findModuleIdCache.size > 500) evictModuleIdCache();
     findModuleIdCache.set(cacheKey, null);
     return null;
 });
@@ -537,6 +544,8 @@ export function findStore(name: StoreNameFilter) {
         return res;
     }
 
+    // Bound: typo'd store names would otherwise pin forever.
+    if (missingStores.size > 200) missingStores.clear();
     missingStores.add(name);
     handleModuleNotFound("findStore", name);
     return null;

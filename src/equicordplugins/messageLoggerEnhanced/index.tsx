@@ -214,8 +214,9 @@ async function processMessageFetch(response: FetchMessagesResponse) {
             m.status === idb.DBMessageStatus.GHOST_PINGED
         );
 
+        const messagesById = new Map(messages.map(m => [m.message_id, m] as const));
         for (const recivedMessage of response.body) {
-            const record = messages.find(m => m.message_id === recivedMessage.id);
+            const record = messagesById.get(recivedMessage.id);
 
             if (record == null) continue;
 
@@ -224,7 +225,8 @@ async function processMessageFetch(response: FetchMessagesResponse) {
             }
         }
 
-        const fetchUser = (id: string) => UserStore.getUser(id) || response.body.find(e => e.author.id === id);
+        const fetchUser = (id: string) => UserStore.getUser(id) || authorsById.get(id);
+        const authorsById = new Map(response.body.map(e => [e.author.id, e.author] as const));
 
         for (let i = 0, len = messages.length; i < len; i++) {
             const record = messages[i];

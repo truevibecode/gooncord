@@ -41,7 +41,11 @@ export async function ensureUnreadFallbackCountsLoaded(userId: string) {
 export function updateUnreadFallbackCounts(userId: string, channelStates: ChannelUnreadState[]) {
     const currentFallbacks = unreadFallbacks[userId] ?? {};
     const nextFallbacks = reconcileUnreadFallbackCache(currentFallbacks, channelStates);
-    if (JSON.stringify(nextFallbacks) === JSON.stringify(currentFallbacks)) return;
+    // Shallow compare without stringify (avoids alloc + sort-order sensitivity)
+    const k1 = Object.keys(currentFallbacks), k2 = Object.keys(nextFallbacks);
+    let equal = k1.length === k2.length;
+    if (equal) for (const k of k1) if (currentFallbacks[k] !== nextFallbacks[k]) { equal = false; break; }
+    if (equal) return;
 
     unreadFallbacks[userId] = nextFallbacks;
 
@@ -51,7 +55,10 @@ export function updateUnreadFallbackCounts(userId: string, channelStates: Channe
         .then(() => DataStore.update<PersistedUnreadFallbacks>(DATASTORE_KEY, old => ({
             ...(old ?? {}),
             [userId]: unreadFallbacks[userId]
-        })));
+        })))
+        .finally(() => {
+            if (unreadFallbackSaves.get(userId) === nextSave) unreadFallbackSaves.delete(userId);
+        });
 
     unreadFallbackSaves.set(userId, nextSave);
 }

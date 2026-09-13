@@ -63,6 +63,11 @@ async function cacheRecord(record?: DBMessageRecord | null) {
     if (!record) return record;
 
     stripTransientRenderState(record.message);
+    // Bound: long sessions with unlimited limit would otherwise mirror the whole IDB in RAM.
+    if (cachedMessages.size >= 500 && !cachedMessages.has(record.message_id)) {
+        const oldest = cachedMessages.keys().next().value!;
+        cachedMessages.delete(oldest);
+    }
     cachedMessages.set(record.message_id, record.message);
     return record;
 }

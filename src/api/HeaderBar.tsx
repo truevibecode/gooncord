@@ -254,7 +254,7 @@ export function _addHeaderBarButtons() {
                 userSelect: "none",
                 letterSpacing: "0.2px"
             }}>
-            Gooncord v1.9 &lt;3
+            Gooncord v1.10 &lt;3
         </div>,
         <HeaderBarButtons key="vc-header-bar-buttons" />
     ];

@@ -23,6 +23,7 @@ import "./settings";
 import { debounce } from "@shared/debounce";
 import { IpcEvents } from "@shared/IpcEvents";
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell, systemPreferences } from "electron";
+import { readFile as readFileAsync } from "fs/promises";
 import monacoHtml from "file://monacoWin.html?minify&base64";
 import { FSWatcher, mkdirSync, readFileSync, watch, writeFileSync } from "fs";
 import { open, readdir, readFile, unlink } from "fs/promises";
@@ -200,8 +201,12 @@ ipcMain.handle(IpcEvents.GET_RENDERER_CSS, () => readFile(RENDERER_CSS_PATH, "ut
 
 if (IS_DISCORD_DESKTOP) {
     let cachedRendererJs: string | undefined;
+    // Pre-warm async so first window doesn't pay sync read.
+    readFileAsync(join(__dirname, "renderer.js"), "utf-8").then(s => cachedRendererJs = s).catch(() => { });
     ipcMain.on(IpcEvents.PRELOAD_GET_RENDERER_JS, e => {
-        cachedRendererJs ??= readFileSync(join(__dirname, "renderer.js"), "utf-8");
+        if (cachedRendererJs === undefined) {
+            try { cachedRendererJs = readFileSync(join(__dirname, "renderer.js"), "utf-8"); } catch { cachedRendererJs = ""; }
+        }
         e.returnValue = cachedRendererJs;
     });
 }

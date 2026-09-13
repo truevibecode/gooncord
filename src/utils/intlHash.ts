@@ -52,7 +52,14 @@ export function runtimeHashMessageKey(key: string): string {
         BASE64_TABLE[bytes[3] >> 2],
         BASE64_TABLE[((bytes[3] & 0x03) << 4) | (bytes[4] >> 4)],
     ].join("");
-    if (intlHashMemo.size > 2000) intlHashMemo.clear();
+    // Evict oldest instead of clear() to avoid thundering re-hash.
+    if (intlHashMemo.size > 2000) {
+        let n = 0;
+        for (const k of intlHashMemo.keys()) {
+            intlHashMemo.delete(k);
+            if (++n >= 200) break;
+        }
+    }
     intlHashMemo.set(key, cached);
     return cached;
 }

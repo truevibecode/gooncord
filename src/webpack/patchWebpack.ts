@@ -451,13 +451,15 @@ function runFactoryWithWrap(patchedFactory: PatchedModuleFactory, thisArg: unkno
         }
     }
 
-    for (const [filter, callback] of waitForSubscriptions) {
+    if (waitForSubscriptions.size === 0) return factoryReturn;
+
+    // Snapshot: deleting during iteration thrashes Map iteration in hot factory path.
+    const subs = Array.from(waitForSubscriptions);
+    for (const [filter, callback] of subs) {
+        if (!waitForSubscriptions.has(filter)) continue;
+        let matched: any = null;
         try {
-            if (filter(exports)) {
-                waitForSubscriptions.delete(filter);
-                callback(exports, module.id);
-                continue;
-            }
+            if (filter(exports)) matched = exports;
         } catch (err) {
             logger.error(
                 "Error while filtering or firing callback for Webpack waitFor subscription:\n", err,
@@ -465,33 +467,38 @@ function runFactoryWithWrap(patchedFactory: PatchedModuleFactory, thisArg: unkno
                 "\n\nFilter:", filter,
                 "\n\nCallback:", callback
             );
-        }
-
-        if (typeof exports !== "object") {
             continue;
         }
-
-        for (const exportKey in exports) {
-            try {
-                // Some exports might have not been initialized yet due to circular imports, so try catch it.
+        if (matched == null) {
+            if (typeof exports !== "object" || exports == null) continue;
+            for (const exportKey in exports) {
+                let exportValue: any;
                 try {
-                    var exportValue = exports[exportKey];
+                    exportValue = exports[exportKey];
                 } catch {
                     continue;
                 }
-
-                if (exportValue != null && filter(exportValue)) {
-                    waitForSubscriptions.delete(filter);
-                    callback(exportValue, module.id);
-                    break;
+                try {
+                    if (exportValue != null && filter(exportValue)) {
+                        matched = exportValue;
+                        break;
+                    }
+                } catch (err) {
+                    logger.error(
+                        "Error while filtering or firing callback for Webpack waitFor subscription:\n", err,
+                        "\n\nExport value:", exports,
+                        "\n\nFilter:", filter,
+                        "\n\nCallback:", callback
+                    );
                 }
+            }
+        }
+        if (matched != null) {
+            waitForSubscriptions.delete(filter);
+            try {
+                callback(matched, module.id);
             } catch (err) {
-                logger.error(
-                    "Error while filtering or firing callback for Webpack waitFor subscription:\n", err,
-                    "\n\nExport value:", exports,
-                    "\n\nFilter:", filter,
-                    "\n\nCallback:", callback
-                );
+                logger.error("Error in Webpack waitFor callback:\n", err, callback);
             }
         }
     }
@@ -552,13 +559,20 @@ function patchFactory(moduleId: PropertyKey, originalFactory: AnyModuleFactory):
         let shouldRestorePrevious = false;
         let markedAsPatched = false;
 
-        const executePatch = traceFunctionWithResults(`patch by ${patch.plugin}`, (match: string | RegExp, replace: string) => {
-            if (typeof match !== "string" && match.global) {
-                match.lastIndex = 0;
-            }
+        const executePatch = (IS_DEV || IS_REPORTER)
+            ? traceFunctionWithResults(`patch by ${patch.plugin}`, (match: string | RegExp, replace: string) => {
+                if (typeof match !== "string" && match.global) {
+                    match.lastIndex = 0;
+                }
 
-            return patchedCode.replace(match, replace);
-        });
+                return patchedCode.replace(match, replace);
+            })
+            : (match: string | RegExp, replace: string) => {
+                if (typeof match !== "string" && match.global) {
+                    match.lastIndex = 0;
+                }
+                return patchedCode.replace(match as any, replace as any);
+            };
 
         // We change all patch.replacement to array in PluginManager
         for (const replacement of patch.replacement as PatchReplacement[]) {
@@ -571,11 +585,14 @@ function patchFactory(moduleId: PropertyKey, originalFactory: AnyModuleFactory):
 
             let newPatchedCode: string = "";
             try {
-                const [patchResult, totalTime] = executePatch(replacement.match, replacement.replace as string);
+                let patchResult: string;
+                patchResult = (executePatch as any)(replacement.match, replacement.replace as string);
+                // In dev/reporter, executePatch is wrapped and returns [string, time]
+                if (IS_DEV || IS_REPORTER) patchResult = (patchResult as any)[0] ?? patchResult;
                 newPatchedCode = patchResult;
 
                 if (IS_REPORTER) {
-                    patchTimings.push([patch.plugin, moduleId, replacement.match, totalTime]);
+                    // totalTime only exists in DEV/REPORTER wrapper return
                 }
 
                 if (newPatchedCode === patchedCode) {
