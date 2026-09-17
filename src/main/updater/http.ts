@@ -61,7 +61,11 @@ async function fetchUpdates() {
     if (hash === gitHash)
         return false;
 
-    const asset = data.assets.find(a => a.name === ASAR_FILE);
+    // The release may not carry a desktop asar (renamed assets, draft, etc).
+    // Fail with a readable message instead of TypeError on undefined.
+    const asset = data.assets?.find(a => a.name === ASAR_FILE);
+    if (!asset)
+        throw new Error(`No ${ASAR_FILE} asset in latest release (${data.name})`);
     PendingUpdate = asset.browser_download_url;
 
     return true;

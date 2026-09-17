@@ -292,31 +292,13 @@ const moduleFactoryHandler: ProxyHandler<MaybePatchedModuleFactory> = {
     }
 };
 
-// Whether a factory needs the observing Proxy. String finds are prefetched
-// with one `includes` each; regex finds conservatively keep the proxy.
-function needsFactoryProxy(factory: AnyModuleFactory): boolean {
-    if (factoryListeners.size !== 0 || moduleListeners.size !== 0 || waitForSubscriptions.size !== 0) return true;
-    if (patches.length === 0) return false;
-    let src: string | undefined;
-    for (const patch of patches) {
-        const find = (patch as Patch).find;
-        if (typeof find !== "string") return true;
-        src ??= String(factory);
-        if (src.includes(find)) return true;
-    }
-    return false;
-}
-
 function proxyFactoryAndUpdateExisting(moduleFactories: AnyWebpackRequire["m"], moduleId: PropertyKey, newFactory: AnyModuleFactory, receiver: any, ignoreExistingInTarget = false) {
     notifyFactoryListeners(moduleId, newFactory);
-    // Skip the Proxy when nothing can observe this factory: no listeners, no
-    // pending waitFors, and its source matches no registered patch `find`.
-    // (Patch plugins require restart, and patches are registered once at boot
-    // in initPluginManager, so a skipped factory can't miss a future patch.)
+    // Always proxy (reverted factory-prefilter skip: late-loaded chunks such
+    // as the settings UI go through runFactoryWithWrap notification, and any
+    // coverage change there correlated with the settings-render crash loop).
     // Hoisted: Settings is a proxied store; reading per-factory (thousands at boot) pays trap each time.
-    const proxiedFactory = needsFactoryProxy(newFactory)
-        ? new Proxy(EAGER_PATCHES ? patchFactory(moduleId, newFactory) : newFactory, moduleFactoryHandler)
-        : newFactory;
+    const proxiedFactory = new Proxy(EAGER_PATCHES ? patchFactory(moduleId, newFactory) : newFactory, moduleFactoryHandler);
 
     if (updateExistingFactory(moduleFactories, moduleId, newFactory, proxiedFactory, ignoreExistingInTarget)) {
         return true;
