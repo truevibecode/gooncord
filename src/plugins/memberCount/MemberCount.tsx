@@ -40,17 +40,23 @@ export function MemberCount({ isTooltip, tooltipGuildId }: { isTooltip?: true; t
                     return channel && PermissionStore.can(PermissionsBits.VIEW_CHANNEL, channel);
                 })
                 .length;
-        }
+        },
+        [includeVoice, guildId],
+        (a, b) => a === b
     );
 
     const totalCount = useStateFromStores(
         [GuildMemberCountStore],
-        () => guildId ? GuildMemberCountStore.getMemberCount(guildId) : null
+        () => guildId ? GuildMemberCountStore.getMemberCount(guildId) : null,
+        [guildId],
+        (a, b) => a === b
     );
 
     let onlineCount = useStateFromStores(
         [OnlineMemberCountStore],
-        () => guildId ? OnlineMemberCountStore.getCount(guildId) : null
+        () => guildId ? OnlineMemberCountStore.getCount(guildId) : null,
+        [guildId],
+        (a, b) => a === b
     );
 
     const memberListOnlineCount = useStateFromStores(
@@ -68,7 +74,9 @@ export function MemberCount({ isTooltip, tooltipGuildId }: { isTooltip?: true; t
             }
 
             return null;
-        }
+        },
+        [isTooltip, guildId, currentChannel?.id],
+        (a, b) => a === b
     );
 
     const threadListOnlineCount = useStateFromStores(
@@ -86,7 +94,9 @@ export function MemberCount({ isTooltip, tooltipGuildId }: { isTooltip?: true; t
             }
 
             return null;
-        }
+        },
+        [isTooltip, currentChannel?.id],
+        (a, b) => a === b
     );
 
     if (memberListOnlineCount != null) onlineCount = memberListOnlineCount;

@@ -17,7 +17,6 @@
 */
 
 import { session } from "electron";
-import { unzip } from "fflate";
 import { constants as fsConstants } from "fs";
 import { access, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
@@ -31,6 +30,8 @@ const extensionCacheDir = join(DATA_DIR, "ExtensionCache");
 
 async function extract(data: Buffer, outDir: string) {
     await mkdir(outDir, { recursive: true });
+    // Loaded on demand: fflate only needed when installing React DevTools.
+    const { unzip } = await import("fflate");
     return new Promise<void>((resolve, reject) => {
         unzip(data, (err, files) => {
             if (err) return void reject(err);

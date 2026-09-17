@@ -30,7 +30,6 @@ export * as WebpackPatcher from "./webpack/patchWebpack";
 export { PlainSettings, Settings };
 
 import { coreStyleRootNode, initStyles } from "@api/Styles";
-import { openSettingsTabModal, UpdaterTab } from "@components/settings";
 import { debounce } from "@shared/debounce";
 import { IS_WINDOWS } from "@utils/constants";
 import { createAndAppendStyle } from "@utils/css";
@@ -121,6 +120,12 @@ async function syncSettings() {
 
 let notifiedForUpdatesThisSession = false;
 
+// Loaded on demand: settings UI (68 files) only needed when user opens it.
+async function openUpdaterTab() {
+    const { openSettingsTabModal, UpdaterTab } = await import("@components/settings");
+    openSettingsTabModal(UpdaterTab!);
+}
+
 async function runUpdateCheck() {
     if (IS_UPDATER_DISABLED) return;
 
@@ -161,7 +166,7 @@ async function runUpdateCheck() {
         showNotice(
             "A new version of Gooncord is available!",
             "View Update",
-            () => openSettingsTabModal(UpdaterTab!)
+            () => void openUpdaterTab()
         );
     } catch (err) {
         UpdateLogger.error("Failed to check for updates", err);
@@ -177,7 +182,7 @@ function initTrayIpc() {
             VencordNative.tray.setUpdateState(isOutdated);
 
             if (isOutdated) {
-                showNotice("A Gooncord update is available!", "View Update", () => openSettingsTabModal(UpdaterTab!));
+                showNotice("A Gooncord update is available!", "View Update", () => void openUpdaterTab());
             } else {
                 showNotice("No updates available, you're on the latest version!", "OK", popNotice);
             }

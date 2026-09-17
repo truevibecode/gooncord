@@ -11,7 +11,6 @@ import { localStorage } from "@utils/localStorage";
 import { Logger } from "@utils/Logger";
 import { relaunch } from "@utils/native";
 import { SettingsRouter } from "@webpack/common";
-import { deflateSync, inflateSync } from "fflate";
 
 import { deauthorizeCloud, getCloudAuth, getCloudUrl } from "./cloudSetup";
 import { exportSettings, importSettings } from "./offline";
@@ -320,6 +319,8 @@ async function deleteV2() {
 async function putV1(manual?: boolean) {
     const settings = await exportSettings({ syncDataStore: false, minify: true });
 
+    // Loaded on demand: fflate only needed for actual cloud sync payloads.
+    const { deflateSync } = await import("fflate");
     const res = await fetch(new URL("/v1/settings", getCloudUrl()), {
         method: "PUT",
         headers: {
@@ -417,6 +418,7 @@ async function getV1(shouldNotify: boolean, force: boolean) {
     }
 
     const data = await res.arrayBuffer();
+    const { inflateSync } = await import("fflate");
     const settings = new TextDecoder().decode(inflateSync(new Uint8Array(data)));
     await importSettings(settings, "all", true);
 

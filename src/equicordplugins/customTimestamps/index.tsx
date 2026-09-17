@@ -33,6 +33,28 @@ type TimeRowProps = {
 };
 
 let thresholdsInit = false;
+// Shared 30s broadcaster: one interval for all visible timestamps instead
+// of one timer per message instance (50+ wakeups/sec before).
+const timestampTickListeners = new Set<() => void>();
+let timestampTicker: ReturnType<typeof setInterval> | undefined;
+function subscribeTimestampTick(fn: () => void): () => void {
+    timestampTickListeners.add(fn);
+    if (timestampTicker == null) {
+        timestampTicker = setInterval(() => {
+            timestampTickListeners.forEach(tick => {
+                try { tick(); } catch { /* ignore */ }
+            });
+            if (timestampTickListeners.size === 0 && timestampTicker != null) {
+                clearInterval(timestampTicker);
+                timestampTicker = undefined;
+            }
+        }, 30000);
+        (timestampTicker as unknown as { unref?: () => void; })?.unref?.();
+    }
+    return () => {
+        timestampTickListeners.delete(fn);
+    };
+}
 const format = (date: Date, formatTemplate: string): string => {
     // Lazy one-time init (NOT top-level): moment is a webpack lazy, unavailable at bundle eval.
     // Doing this at import time throws and kills the whole renderer -> vanilla Discord.
@@ -202,12 +224,8 @@ export default definePlugin({
         }
 
         useEffect(() => {
-            if (formatTemplate.includes("calendar") || formatTemplate.includes("relative")) {
-                // Was 1000ms per visible timestamp (50+ timers/sec). 30s keeps
-                // relative/calendar correct with 30x fewer wakeups.
-                const interval = setInterval(forceUpdater, 30000);
-                return () => clearInterval(interval);
-            }
+            if (!formatTemplate.includes("calendar") && !formatTemplate.includes("relative")) return;
+            return subscribeTimestampTick(forceUpdater);
         }, [formatTemplate]);
 
         return format(date, formatTemplate);

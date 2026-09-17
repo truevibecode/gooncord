@@ -1484,3 +1484,8 @@ export function resumeInterruptedAutoCompletes(): void {
 export function getActiveAutoCompletes(): readonly Readonly<AutoCompleteEntry>[] {
     return Array.from(activeAutoCompletes.values());
 }
+
+// Allocation-free check for render paths that only need a boolean.
+export function hasActiveAutoCompletes(): boolean {
+    return activeAutoCompletes.size > 0;
+}

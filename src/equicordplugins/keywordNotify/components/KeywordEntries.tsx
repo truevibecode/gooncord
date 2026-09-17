@@ -16,7 +16,7 @@ import { classes } from "@utils/misc";
 import { useForceUpdater } from "@utils/react";
 import { TextInput, useState } from "@webpack/common";
 
-import { addKeywordEntry, cl, KEYWORD_ENTRIES_KEY, keywordEntries, ListType, removeKeywordEntry } from "..";
+import { addKeywordEntry, cl, invalidateKeywordCache, KEYWORD_ENTRIES_KEY, keywordEntries, ListType, removeKeywordEntry } from "..";
 import { Collapsible } from "./Collapsible";
 import { FormGenericLabel } from "./FormGenericLabel";
 import { ListedIds } from "./ListedIds";
@@ -28,6 +28,7 @@ export function KeywordEntries() {
 
     async function updateStoreAndRender() {
         await DataStore.set(KEYWORD_ENTRIES_KEY, keywordEntries);
+        invalidateKeywordCache();
         update();
     }
 

@@ -158,12 +158,18 @@ export function startDependenciesRecursive(p: Plugin) {
     const failures: string[] = [];
 
     p.dependencies?.forEach(d => {
-        if (!settings[d].enabled) {
+        if (!settings[d]?.enabled) {
             const dep = Plugins[d];
+            if (!dep) {
+                logger.warn(`Plugin ${p.name} has unresolved dependency ${d}, skipping.`);
+                failures.push(d);
+                return;
+            }
             startDependenciesRecursive(dep);
 
             // If the plugin has patches, don't start the plugin, just enable it.
-            settings[d].enabled = true;
+            if (!settings[d]) (settings as Record<string, any>)[d] = { enabled: true };
+            else settings[d].enabled = true;
             dep.isDependency = true;
 
             if (pluginRequiresRestart(dep)) {

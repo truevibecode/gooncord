@@ -75,11 +75,13 @@ export default ErrorBoundary.wrap(function NotificationComponent(props: Notifica
         }
 
         startRef.current = Date.now();
+        // 100ms like api/Notifications: progress granularity is imperceptible,
+        // 10ms was 100 re-renders/sec per toast.
         const intervalId = setInterval(() => {
             const next = Date.now() - startRef.current;
             if (next >= timeout) props.onClose!();
             else setElapsed(next);
-        }, 10);
+        }, 100);
 
         return () => clearInterval(intervalId);
     }, [isHover, props.permanent, timeout]);

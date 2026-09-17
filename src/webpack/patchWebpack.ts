@@ -104,6 +104,9 @@ define(Function.prototype, "m", {
     set(this: AnyWebpackRequire, originalModules: AnyWebpackRequire["m"]) {
         define(this, "m", { value: originalModules });
 
+        // Cheap guard before Error/stack/String(this) allocs below.
+        if ((this as any).c == null) return;
+
         // Ensure this is likely one of Discord main Webpack instances.
         // We may catch Discord bundled libs, React Devtools or other extensions Webpack instances here.
         const { stack } = new Error();
@@ -513,8 +516,18 @@ function runFactoryWithWrap(patchedFactory: PatchedModuleFactory, thisArg: unkno
  * @param originalFactory The original module factory
  * @returns The patched module factory
  */
+// Cache factory -> source: String(factory) on multi-KB sources per patch burst otherwise.
+const factoryCodeCache = new WeakMap<Function, string>();
+function getFactoryCode(factory: AnyModuleFactory): string {
+    let code = factoryCodeCache.get(factory as Function);
+    if (code === undefined) {
+        code = String(factory);
+        factoryCodeCache.set(factory as Function, code);
+    }
+    return code;
+}
 function patchFactory(moduleId: PropertyKey, originalFactory: AnyModuleFactory): PatchedModuleFactory {
-    const originalFactoryCode = String(originalFactory);
+    const originalFactoryCode = getFactoryCode(originalFactory);
     const isArrowFunction = originalFactoryCode.startsWith("(");
 
     // 0, prefix to turn it into an expression: 0,function(){} would be invalid syntax without the 0,

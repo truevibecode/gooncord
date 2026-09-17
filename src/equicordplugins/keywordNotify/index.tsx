@@ -46,6 +46,41 @@ export let keywordEntries: Array<KeywordEntry> = [];
 let keywordLog: Array<Message> = [];
 let interceptor: (e: any) => void;
 
+// Precompiled per entry: building RegExp + trimming id lists per message
+// dominated this hot path. Rebuilt when the entries array identity changes
+// or on explicit invalidate (in-place edits via settings UI).
+interface CompiledKeyword {
+    entry: KeywordEntry;
+    re: RegExp | null;
+    reGlobal: RegExp | null;
+    wl: Set<string>;
+    bl: Set<string>;
+}
+let compiledFor: Array<KeywordEntry> | null = null;
+let compiledKeywords: Array<CompiledKeyword> = [];
+export function invalidateKeywordCache() {
+    compiledFor = null;
+}
+function getCompiledKeywords(): Array<CompiledKeyword> {
+    if (compiledFor !== keywordEntries) {
+        const norm = (ids: string[]) => new Set(ids.map(id => id.trim()).filter(Boolean));
+        compiledKeywords = keywordEntries.filter(e => e.regex !== "").map(entry => {
+            let re: RegExp | null = null;
+            let reGlobal: RegExp | null = null;
+            try {
+                const flags = entry.ignoreCase ? "i" : "";
+                re = new RegExp(entry.regex, flags);
+                reGlobal = new RegExp(entry.regex, "g" + flags);
+            } catch {
+                // Invalid regex: treated as never-matching (same as before).
+            }
+            return { entry, re, reGlobal, wl: norm(entry.whitelist), bl: norm(entry.blacklist) };
+        });
+        compiledFor = keywordEntries;
+    }
+    return compiledKeywords;
+}
+
 interface ScrollerContext {
     id: string;
     onKeyDown: () => void;
@@ -85,21 +120,15 @@ export async function addKeywordEntry(forceUpdate: () => void) {
         listPriority: ListType.BlackList,
     });
     await DataStore.set(KEYWORD_ENTRIES_KEY, keywordEntries);
+    invalidateKeywordCache();
     forceUpdate();
 }
 
 export async function removeKeywordEntry(idx: number, forceUpdate: () => void) {
     keywordEntries.splice(idx, 1);
     await DataStore.set(KEYWORD_ENTRIES_KEY, keywordEntries);
+    invalidateKeywordCache();
     forceUpdate();
-}
-
-function safeMatchesRegex(str: string, regex: string, flags: string) {
-    try {
-        return str.match(new RegExp(regex, flags));
-    } catch {
-        return false;
-    }
 }
 
 export enum ListType {
@@ -107,15 +136,14 @@ export enum ListType {
     Whitelist = "Whitelist"
 }
 
-function highlightKeywords(str: string, entries: Array<KeywordEntry>) {
-    let regexes: Array<RegExp>;
-    try {
-        regexes = entries.map(e => new RegExp(e.regex, "g" + (e.ignoreCase ? "i" : "")));
-    } catch (err) {
-        return [str];
+function highlightKeywords(str: string) {
+    const matches: Array<string> = [];
+    for (const { reGlobal } of getCompiledKeywords()) {
+        if (!reGlobal) continue;
+        reGlobal.lastIndex = 0;
+        const m = str.match(reGlobal);
+        if (m) matches.push(...m);
     }
-
-    const matches = regexes.map(r => str.match(r)).flat().filter(e => e != null) as Array<string>;
     if (matches.length === 0) {
         return [str];
     }
@@ -228,34 +256,19 @@ export default definePlugin({
     },
 
     applyKeywordEntries(m: Message) {
+        const compiled = getCompiledKeywords();
+        if (!compiled.length) return;
+
         let matches = false;
+        // Hoisted: one channel lookup per message, not two per entry.
+        const channel = ChannelStore.getChannel(m.channel_id);
+        const guildId = channel?.guild_id;
+        // Null content never matched before (match threw, caught); keep that.
+        const content: string | null = m.content ?? null;
 
-        for (const entry of keywordEntries) {
-            if (entry.regex === "") {
-                continue;
-            }
-
-            let isInWhitelist = entry.whitelist.some(id => {
-                const trimmed = id.trim();
-                return trimmed === m.channel_id || trimmed === m.author.id;
-            });
-            if (!isInWhitelist) {
-                const channel = ChannelStore.getChannel(m.channel_id);
-                if (channel != null) {
-                    isInWhitelist = entry.whitelist.some(id => id.trim() === channel.guild_id);
-                }
-            }
-
-            let isInBlacklist = entry.blacklist.some(id => {
-                const trimmed = id.trim();
-                return trimmed === m.channel_id || trimmed === m.author.id;
-            });
-            if (!isInBlacklist) {
-                const channel = ChannelStore.getChannel(m.channel_id);
-                if (channel != null) {
-                    isInBlacklist = entry.blacklist.some(id => id.trim() === channel.guild_id);
-                }
-            }
+        for (const { entry, re, wl, bl } of compiled) {
+            const isInWhitelist = wl.has(m.channel_id) || wl.has(m.author.id) || (guildId != null && wl.has(guildId));
+            const isInBlacklist = bl.has(m.channel_id) || bl.has(m.author.id) || (guildId != null && bl.has(guildId));
 
             const isWhitelistPrioritized = entry.listPriority === ListType.Whitelist;
 
@@ -277,21 +290,26 @@ export default definePlugin({
                 continue;
             }
 
-            const flags = entry.ignoreCase ? "i" : "";
-            if (safeMatchesRegex(m.content, entry.regex, flags)) {
+            if (re == null) continue;
+            if (content != null && re.test(content)) {
                 matches = true;
             } else {
                 for (const embed of m.embeds as any) {
-                    if (safeMatchesRegex(embed.description, entry.regex, flags) || safeMatchesRegex(embed.title, entry.regex, flags)) {
+                    const desc = embed.description ?? "";
+                    const title = embed.title ?? "";
+                    if ((desc && re.test(desc)) || (title && re.test(title))) {
                         matches = true;
                         break;
                     } else if (embed.fields != null) {
                         for (const field of embed.fields as Array<{ name: string, value: string; }>) {
-                            if (safeMatchesRegex(field.value, entry.regex, flags) || safeMatchesRegex(field.name, entry.regex, flags)) {
+                            const value = field.value ?? "";
+                            const name = field.name ?? "";
+                            if ((value && re.test(value)) || (name && re.test(name))) {
                                 matches = true;
                                 break;
                             }
                         }
+                        if (matches) break;
                     }
                 }
             }
@@ -405,7 +423,7 @@ export default definePlugin({
             message._keyword = true;
 
             message.customRenderedContent = {
-                content: highlightKeywords(message.content, keywordEntries)
+                content: highlightKeywords(message.content)
             };
 
             return this.RenderMsg({

@@ -24,9 +24,8 @@ import { debounce } from "@shared/debounce";
 import { IpcEvents } from "@shared/IpcEvents";
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell, systemPreferences } from "electron";
 import { readFile as readFileAsync } from "fs/promises";
-import monacoHtml from "file://monacoWin.html?minify&base64";
-import { FSWatcher, mkdirSync, readFileSync, watch, writeFileSync } from "fs";
-import { open, readdir, readFile, unlink } from "fs/promises";
+import { FSWatcher, mkdirSync, readFileSync, watch } from "fs";
+import { open, readdir, readFile, unlink, writeFile } from "fs/promises";
 import { release } from "os";
 import { join } from "path";
 
@@ -86,8 +85,8 @@ ipcMain.handle(IpcEvents.OPEN_EXTERNAL, (_, url) => {
 });
 
 ipcMain.handle(IpcEvents.GET_QUICK_CSS, () => readCss());
-ipcMain.handle(IpcEvents.SET_QUICK_CSS, (_, css) =>
-    writeFileSync(QUICK_CSS_PATH, css)
+ipcMain.handle(IpcEvents.SET_QUICK_CSS, (_, css: string) =>
+    writeFile(QUICK_CSS_PATH, css)
 );
 
 ipcMain.handle(IpcEvents.GET_THEMES_LIST, () => listThemes());
@@ -113,37 +112,47 @@ ipcMain.handle(IpcEvents.OPEN_THEMES_FOLDER, () => shell.openPath(THEMES_DIR));
 ipcMain.handle(IpcEvents.OPEN_SETTINGS_FOLDER, () => shell.openPath(SETTINGS_DIR));
 
 let fsWatchers = [] as FSWatcher[];
+let fileWatchersGeneration = 0;
 
 ipcMain.handle(IpcEvents.INIT_FILE_WATCHERS, ({ sender }) => {
-    fsWatchers.forEach(w => w.close());
+    const generation = ++fileWatchersGeneration;
+    fsWatchers.forEach(w => { try { w.close(); } catch { } });
+    fsWatchers = [];
 
     let quickCssWatcher: FSWatcher | undefined;
     let rendererCssWatcher: FSWatcher | undefined;
 
     open(QUICK_CSS_PATH, "a+").then(fd => {
-        fd.close();
+        fd.close().catch(() => { });
+        if (generation !== fileWatchersGeneration || sender.isDestroyed()) return;
         quickCssWatcher = watch(QUICK_CSS_PATH, { persistent: false }, debounce(async () => {
-            sender.postMessage(IpcEvents.QUICK_CSS_UPDATE, await readCss());
+            if (!sender.isDestroyed())
+                sender.postMessage(IpcEvents.QUICK_CSS_UPDATE, await readCss());
         }, 50));
+        fsWatchers.push(quickCssWatcher);
     }).catch(() => { });
 
     const themesWatcher = watch(THEMES_DIR, { persistent: false }, debounce(() => {
-        sender.postMessage(IpcEvents.THEME_UPDATE, void 0);
+        if (!sender.isDestroyed())
+            sender.postMessage(IpcEvents.THEME_UPDATE, void 0);
     }));
 
     if (IS_DEV) {
         rendererCssWatcher = watch(RENDERER_CSS_PATH, { persistent: false }, async () => {
-            sender.postMessage(IpcEvents.RENDERER_CSS_UPDATE, await readFile(RENDERER_CSS_PATH, "utf-8"));
+            if (!sender.isDestroyed())
+                sender.postMessage(IpcEvents.RENDERER_CSS_UPDATE, await readFile(RENDERER_CSS_PATH, "utf-8"));
         });
     }
 
-    fsWatchers = [quickCssWatcher, themesWatcher, rendererCssWatcher].filter(Boolean) as FSWatcher[];
+    fsWatchers = [themesWatcher, rendererCssWatcher].filter(Boolean) as FSWatcher[];
+    if (quickCssWatcher) fsWatchers.push(quickCssWatcher);
 
     sender.once("destroyed", () => {
         quickCssWatcher?.close();
-        themesWatcher.close();
+        try { themesWatcher.close(); } catch { }
         rendererCssWatcher?.close();
-        fsWatchers = [];
+        if (generation === fileWatchersGeneration)
+            fsWatchers = [];
     });
 });
 
@@ -177,23 +186,27 @@ ipcMain.handle(IpcEvents.OPEN_MONACO_EDITOR, async () => {
 
     makeLinksOpenExternally(monacoWin);
 
+    // Loaded on demand: 100sKB base64 html only needed when editor opens.
+    const { default: monacoHtml } = await import("file://monacoWin.html?minify&base64");
     await monacoWin.loadURL(`data:text/html;base64,${monacoHtml}`);
 });
 
-app.on("before-quit", async event => {
+app.on("before-quit", event => {
     if (monacoWin && !monacoWin.isDestroyed() && !monacoWin.isVisible()) {
-        const result = await dialog.showMessageBox({
+        event.preventDefault();
+        void dialog.showMessageBox({
             type: "question",
             buttons: ["Cancel", "Close Anyway"],
             defaultId: 0,
             title: "QuickCSS Editor Open",
             message: "QuickCSS editor is still open in the background.",
             detail: "Do you want to close Discord anyway? This will also close the QuickCSS editor."
+        }).then(result => {
+            if (result.response === 1) {
+                monacoWin?.destroy();
+                app.exit();
+            }
         });
-
-        if (result.response === 1) {
-            app.exit();
-        }
     }
 });
 

@@ -411,6 +411,8 @@ export async function addScheduledMessage(
     scheduledMessages.sort((a, b) => a.scheduledTime - b.scheduledTime);
     await saveScheduledMessages();
     createPhantomMessage(newMessage);
+    // (Re)start the poller only when there is actually something queued.
+    startScheduler();
 
     return { success: true };
 }
@@ -487,6 +489,9 @@ async function checkAndSendMessages(): Promise<void> {
             await removeScheduledMessage(msg.id);
             await sendScheduledMessage(msg);
         }
+
+        // Park the poller when the queue drains; scheduleMessage() restarts it.
+        if (scheduledMessages.length === 0) stopScheduler();
     } finally {
         isProcessingMessages = false;
     }
