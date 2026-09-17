@@ -47,17 +47,20 @@ function readCss() {
 }
 
 async function listThemes(): Promise<UserThemeHeader[]> {
-    const files = await readdir(THEMES_DIR).catch(() => [] as string[]);
+    const files = await readdir(THEMES_DIR).catch(() => []);
 
-    // Parallel: sequential read+parse per theme stalls the settings page.
-    const infos = await Promise.all(files
-        .filter(fileName => fileName.endsWith(".css"))
-        .map(async fileName => {
-            const data = await getThemeData(fileName).then(stripBOM).catch(() => null);
-            if (data == null) return null;
-            return getThemeInfo(data, fileName);
-        }));
-    return infos.filter((t): t is UserThemeHeader => t !== null);
+    const themeInfo: UserThemeHeader[] = [];
+
+    for (const fileName of files) {
+        if (!fileName.endsWith(".css")) continue;
+
+        const data = await getThemeData(fileName).then(stripBOM).catch(() => null);
+        if (data == null) continue;
+
+        themeInfo.push(getThemeInfo(data, fileName));
+    }
+
+    return themeInfo;
 }
 
 function getThemeData(fileName: string) {
