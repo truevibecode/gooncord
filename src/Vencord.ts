@@ -244,7 +244,11 @@ async function init() {
 
 initPluginManager();
 initStyles();
-startAllPlugins(StartAt.Init);
+try {
+    startAllPlugins(StartAt.Init);
+} catch (err) {
+    console.error("[Gooncord] startAllPlugins(Init) threw, continuing to init():", err);
+}
 init();
 
 document.addEventListener("DOMContentLoaded", () => {

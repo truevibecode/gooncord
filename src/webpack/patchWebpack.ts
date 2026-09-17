@@ -104,8 +104,11 @@ define(Function.prototype, "m", {
     set(this: AnyWebpackRequire, originalModules: AnyWebpackRequire["m"]) {
         define(this, "m", { value: originalModules });
 
-        // Cheap guard before Error/stack/String(this) allocs below.
-        if ((this as any).c == null) return;
+        // NOTE: do NOT early-return on `this.c == null` here. Discord's
+        // bootstrap can assign `.m` before `.c` exists, and bailing out
+        // skips installing the `p`/`O` setters below, so the main instance
+        // is never detected -> renderer runs but zero patches apply
+        // (tray shows Gooncord, app looks vanilla, no errors anywhere).
 
         // Ensure this is likely one of Discord main Webpack instances.
         // We may catch Discord bundled libs, React Devtools or other extensions Webpack instances here.

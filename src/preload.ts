@@ -29,7 +29,11 @@ if (location.protocol !== "data:") {
     invoke(IpcEvents.INIT_FILE_WATCHERS);
 
     if (IS_DISCORD_DESKTOP) {
-        webFrame.executeJavaScript(sendSync<string>(IpcEvents.PRELOAD_GET_RENDERER_JS)).catch(() => { });
+        // Never swallow renderer eval errors: a silent catch here turns every
+        // boot failure into "looks vanilla" with zero diagnostics.
+        webFrame.executeJavaScript(sendSync<string>(IpcEvents.PRELOAD_GET_RENDERER_JS)).catch(err =>
+            console.error("[Gooncord] Renderer eval failed:", err?.message ?? err, err?.stack?.slice(0, 2000) ?? "")
+        );
         // Not supported in sandboxed preload scripts but Discord doesn't support it either so who cares
         const discordPreload = process.env.DISCORD_PRELOAD;
         if (discordPreload) require(discordPreload);
