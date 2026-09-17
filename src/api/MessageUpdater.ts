@@ -26,3 +26,27 @@ export function updateMessage(channelId: string, messageId: string, fields?: Par
     MessageCache.commit(newChannelMessageCache);
     MessageStore.emitChange();
 }
+
+// Batched variant: coalesces rapid successive updates into a single store emit.
+// Same commits as updateMessage, just one emit per microtask. Use in hot paths.
+const pendingBatched = new Map<string, { channelId: string; messageId: string; fields?: Partial<Message & Record<string, any>>; }>();
+let batchedFlushScheduled = false;
+export function updateMessageBatched(channelId: string, messageId: string, fields?: Partial<Message & Record<string, any>>) {
+    pendingBatched.set(channelId + ":" + messageId, { channelId, messageId, fields });
+    if (batchedFlushScheduled) return;
+    batchedFlushScheduled = true;
+    queueMicrotask(() => {
+        batchedFlushScheduled = false;
+        if (!pendingBatched.size) return;
+        const jobs = [...pendingBatched.values()];
+        pendingBatched.clear();
+        for (const { channelId: cid, messageId: mid, fields: f } of jobs) {
+            const cache = MessageCache.getOrCreate(cid);
+            if (!cache.has(mid)) continue;
+            const next = cache.update(mid, (oldMessage: any) =>
+                f ? oldMessage.merge(f) : new oldMessage.constructor(oldMessage));
+            MessageCache.commit(next);
+        }
+        MessageStore.emitChange();
+    });
+}

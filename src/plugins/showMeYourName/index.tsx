@@ -105,6 +105,25 @@ let convertToRGBCanvas: HTMLCanvasElement | null = null;
 let convertToRGBCtx: CanvasRenderingContext2D | null = null;
 let convertToRGBCache: Map<string, [number, number, number] | null> | null = null;
 
+// Cached theme vars: getComputedStyle forces style recalc, don't pay it per message.
+let cachedThemeKey = "";
+let cachedTextStrong: string | null = null;
+let cachedTextMuted = "#72767d";
+function getThemeVars() {
+    const key = document.documentElement.className;
+    if (key !== cachedThemeKey) {
+        cachedThemeKey = key;
+        try {
+            cachedTextStrong = getComputedStyle(document.documentElement).getPropertyValue("--text-strong").trim() || null;
+            cachedTextMuted = getComputedStyle(document.documentElement)?.getPropertyValue("--text-muted")?.trim() || "#72767d";
+        } catch {
+            cachedTextStrong = null;
+            cachedTextMuted = "#72767d";
+        }
+    }
+    return { textStrong: cachedTextStrong, textMuted: cachedTextMuted };
+}
+
 function convertToRGB(color: string): [number, number, number] | null {
     const cached = convertToRGBCache?.get(color);
     if (cached !== undefined) return cached ?? null;
@@ -160,7 +179,7 @@ function resolveColor(
     ircColorsEnabled: boolean,
     shouldShowEffects: boolean,
 ): Record<string, any> | null {
-    const defaultColor = getComputedStyle(document.documentElement).getPropertyValue("--text-strong").trim() || null;
+    const defaultColor = getThemeVars().textStrong;
 
     if (!defaultColor) { return null; }
 
@@ -735,7 +754,7 @@ function renderUsername(
     const topRoleStyle = author ? resolveColor(authorColorStrings, authorDisplayNameStyles, "Role", canUseGradient, inGuild, ircColorsEnabled, shouldShowHoverEffects) : null;
     const hasGradient = !!topRoleStyle?.gradient && Object.keys(topRoleStyle.gradient).length > 0;
 
-    const textMutedValue = getComputedStyle(document.documentElement)?.getPropertyValue("--text-muted")?.trim() || "#72767d";
+    const textMutedValue = getThemeVars().textMuted;
     const options = splitTemplate(includedNames);
     const resolvedUsernameColor = author ? resolveColor(authorColorStrings, authorDisplayNameStyles, usernameColor.trim(), canUseGradient, inGuild, ircColorsEnabled, shouldShowHoverEffects) : null;
     const resolvedDisplayNameColor = author ? resolveColor(authorColorStrings, authorDisplayNameStyles, displayNameColor.trim(), canUseGradient, inGuild, ircColorsEnabled, shouldShowHoverEffects) : null;

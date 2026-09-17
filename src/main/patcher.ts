@@ -39,6 +39,9 @@ if (IS_VESKTOP || IS_EQUIBOP) require.main!.filename = join(dirname(injectorPath
 // @ts-expect-error Untyped method? Dies from cringe
 app.setAppPath(asarPath);
 
+// Hoisted: same path for every window, don't re-join per construction.
+const GOON_PRELOAD_PATH = join(__dirname, "preload.js");
+
 if (!IS_VANILLA) {
     const settings = RendererSettings.store;
 
@@ -91,7 +94,7 @@ if (!IS_VANILLA) {
 
             const original = options.webPreferences.preload;
             const isMainWindow = options.title === "Discord";
-            options.webPreferences.preload = join(__dirname, "preload.js");
+            options.webPreferences.preload = GOON_PRELOAD_PATH;
             options.webPreferences.sandbox = false;
             // work around discord unloading when in background
             options.webPreferences.backgroundThrottling = false;

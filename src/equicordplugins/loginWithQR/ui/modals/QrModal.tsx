@@ -16,7 +16,7 @@ import {
     useRef,
     useState,
 } from "@webpack/common";
-import jsQR, { QRCode } from "jsqr";
+import type { QRCode } from "jsqr";
 import { MutableRefObject, ReactElement } from "react";
 
 import { cl, Spinner, SpinnerTypes } from "..";
@@ -93,7 +93,7 @@ const handleProcessImage = (file: File, modalPropsRef: QrModalPropsRef) => {
         if (!reader.result) return;
 
         const img = new Image();
-        img.addEventListener("load", () => {
+        img.addEventListener("load", async () => {
             modalProps.setPreview(img);
             const { w, h } = limitSize(img.width, img.height);
             img.width = w;
@@ -112,6 +112,8 @@ const handleProcessImage = (file: File, modalPropsRef: QrModalPropsRef) => {
                 canvas.width,
                 canvas.height
             );
+            // Loaded on demand: jsqr is ~250KB, never needed unless user scans an image.
+            const { default: jsQR } = await import("jsqr");
             const code = jsQR(data, width, height);
 
             const token = code?.data.match(tokenRegex)?.[1];

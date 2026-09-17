@@ -230,7 +230,7 @@ export const installHostUpdateHook = () => {
     const origRequire = Module.prototype.require;
     Module.prototype.require = function (this: Module, id: string) {
         const result = origRequire.call(this, id);
-        if (!id.includes("discord_desktop_core")) return result;
+        if (id !== "discord_desktop_core" && !id.endsWith("/discord_desktop_core") && !id.endsWith("\\discord_desktop_core")) return result;
 
         if (basename(id.replace(/\\/g, "/")) === "discord_desktop_core") {
             try { wrapStartup(result?.default ?? result); } catch (e) { error(e); }

@@ -23,6 +23,8 @@ export class TTLMap<K, V> extends Map<K, V> {
             this.delete(key);
             this.onExpire?.(key, value);
         }, this.expiryMs);
+        // Don't keep Node/Electron alive just for cache expiry
+        (timeoutId as unknown as { unref?: () => void }).unref?.();
         this._timers.set(key, timeoutId);
 
         return super.set(key, value);

@@ -147,7 +147,7 @@ async function runUpdateCheck() {
                 notifiedForUpdatesThisSession = true;
 
                 showNotice(
-                    "Equicord has been updated!",
+                    "Gooncord has been updated!",
                     "Restart",
                     relaunch
                 );
@@ -159,7 +159,7 @@ async function runUpdateCheck() {
         notifiedForUpdatesThisSession = true;
 
         showNotice(
-            "A new version of Equicord is available!",
+            "A new version of Gooncord is available!",
             "View Update",
             () => openSettingsTabModal(UpdaterTab!)
         );
@@ -177,7 +177,7 @@ function initTrayIpc() {
             VencordNative.tray.setUpdateState(isOutdated);
 
             if (isOutdated) {
-                showNotice("An Equicord update is available!", "View Update", () => openSettingsTabModal(UpdaterTab!));
+                showNotice("A Gooncord update is available!", "View Update", () => openSettingsTabModal(UpdaterTab!));
             } else {
                 showNotice("No updates available, you're on the latest version!", "OK", popNotice);
             }
@@ -192,7 +192,7 @@ function initTrayIpc() {
             await update();
             relaunch();
         } catch (err) {
-            UpdateLogger.error("Failed to repair Equicord", err);
+            UpdateLogger.error("Failed to repair Gooncord", err);
         }
     });
 
@@ -203,11 +203,17 @@ async function init() {
     await onceReady;
     startAllPlugins(StartAt.WebpackReady);
 
-    syncSettings();
-    initTrayIpc();
+    // Off critical path: cloud IDB + network + tray IPC don't block chat render.
+    const idle = (fn: () => void) => (window as any).requestIdleCallback?.(fn, { timeout: 15000 }) ?? setTimeout(fn, 3000);
+    idle(() => {
+        syncSettings();
+        initTrayIpc();
+    });
 
     if (!IS_DEV && !IS_WEB && !IS_UPDATER_DISABLED) {
-        runUpdateCheck();
+        // Defer first update check to idle so it doesn't contend with Discord startup fetches
+        const defer = (fn: () => void) => (window as any).requestIdleCallback?.(fn, { timeout: 15000 }) ?? setTimeout(fn, 15000);
+        defer(runUpdateCheck);
 
         // this tends to get really annoying, so only do this if the user has auto-update without notification enabled
         if (Settings.autoUpdate && !Settings.autoUpdateNotification) {
@@ -227,6 +233,8 @@ async function init() {
                 "\n\n" + pendingPatches.map(p => `${p.plugin}: ${p.find}`).join("\n")
             );
     }
+    // Startup notice
+    console.log("%c[Gooncord v1.12]%c Ultra-performance build active (%s)", "color: #7289da; font-weight: bold; font-size: 14px;", "color: #43b581; font-weight: bold;", new Date().toLocaleTimeString());
 }
 
 initPluginManager();

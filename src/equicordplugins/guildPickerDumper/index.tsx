@@ -9,7 +9,6 @@ import { Devs, EquicordDevs } from "@utils/constants";
 import definePlugin from "@utils/types";
 import type { Guild } from "@vencord/discord-types";
 import { EmojiStore, Menu, StickersStore } from "@webpack/common";
-import { zipSync } from "fflate";
 
 const StickerExt = [, "png", "apng", "json", "gif"] as const;
 
@@ -80,7 +79,9 @@ async function zipGuildAssets(guild: Guild, type: "emojis" | "stickers") {
     const assetPromises = items.map(e => fetchAsset(e));
 
     Promise.all(assetPromises)
-        .then(results => {
+        .then(async results => {
+            // Loaded on demand: fflate only needed when dumping assets.
+            const { zipSync } = await import("fflate");
             const zipped = zipSync(Object.fromEntries(results.map(({ file, filename }) => [filename, file])));
             const blob = new Blob([new Uint8Array(zipped)], { type: "application/zip" });
             const objectUrl = URL.createObjectURL(blob);

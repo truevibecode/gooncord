@@ -6,7 +6,6 @@
 
 import { PluginNative } from "@utils/types";
 import { saveFile } from "@utils/web";
-import { unzipSync } from "fflate";
 
 const Native = VencordNative?.pluginHelpers?.ZipPreview as PluginNative<typeof import("./native")> | undefined;
 
@@ -203,7 +202,9 @@ function isValidDiscordAttachmentPath(path: string): boolean {
         && parts.slice(2).every(part => part.length > 0);
 }
 
-function parseZipBuffer(buffer: ArrayBuffer): ZipPreviewResult {
+async function parseZipBuffer(buffer: ArrayBuffer): Promise<ZipPreviewResult> {
+    // Loaded on demand: fflate only needed when previewing a zip.
+    const { unzipSync } = await import("fflate");
     const unzipped = unzipSync(new Uint8Array(buffer));
     const files = Object.entries(unzipped)
         .filter(([path]) => !path.endsWith("/"))

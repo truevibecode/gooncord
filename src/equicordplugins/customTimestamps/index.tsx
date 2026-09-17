@@ -32,26 +32,36 @@ type TimeRowProps = {
     pluginSettings: any;
 };
 
+let thresholdsInit = false;
 const format = (date: Date, formatTemplate: string): string => {
+    // Lazy one-time init (NOT top-level): moment is a webpack lazy, unavailable at bundle eval.
+    // Doing this at import time throws and kills the whole renderer -> vanilla Discord.
+    if (!thresholdsInit) {
+        thresholdsInit = true;
+        try {
+            moment.relativeTimeThreshold("s", 60);
+            moment.relativeTimeThreshold("ss", -1);
+            moment.relativeTimeThreshold("m", 60);
+        } catch { }
+    }
     const mmt = moment(date);
-
-    moment.relativeTimeThreshold("s", 60);
-    moment.relativeTimeThreshold("ss", -1);
-    moment.relativeTimeThreshold("m", 60);
 
     const sameDayFormat = settings.store?.formats?.sameDayFormat || timeFormats.sameDayFormat.default;
     const lastDayFormat = settings.store?.formats?.lastDayFormat || timeFormats.lastDayFormat.default;
     const lastWeekFormat = settings.store?.formats?.lastWeekFormat || timeFormats.lastWeekFormat.default;
     const sameElseFormat = settings.store?.formats?.sameElseFormat || timeFormats.sameElseFormat.default;
 
-    return mmt.format(formatTemplate)
-        .replace("calendar", () => mmt.calendar(null, {
+    let out = mmt.format(formatTemplate);
+    if (formatTemplate.includes("calendar"))
+        out = out.replace("calendar", () => mmt.calendar(null, {
             sameDay: sameDayFormat,
             lastDay: lastDayFormat,
             lastWeek: lastWeekFormat,
             sameElse: sameElseFormat
-        }))
-        .replace("relative", () => mmt.fromNow());
+        }));
+    if (formatTemplate.includes("relative"))
+        out = out.replace("relative", () => mmt.fromNow());
+    return out;
 };
 
 const TimeRow = (props: TimeRowProps) => {
@@ -193,10 +203,12 @@ export default definePlugin({
 
         useEffect(() => {
             if (formatTemplate.includes("calendar") || formatTemplate.includes("relative")) {
-                const interval = setInterval(forceUpdater, 1000);
+                // Was 1000ms per visible timestamp (50+ timers/sec). 30s keeps
+                // relative/calendar correct with 30x fewer wakeups.
+                const interval = setInterval(forceUpdater, 30000);
                 return () => clearInterval(interval);
             }
-        }, []);
+        }, [formatTemplate]);
 
         return format(date, formatTemplate);
     }
