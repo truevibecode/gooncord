@@ -62,15 +62,10 @@ export function makeClassNameRegex(className: string) {
 }
 
 export const filters = {
-    byProps: (...props: PropsFilter): FilterFn => {
-        const filter: FilterFn = props.length === 1
+    byProps: (...props: PropsFilter): FilterFn =>
+        props.length === 1
             ? m => m[props[0]] !== void 0
-            : m => props.every(p => m[p] !== void 0);
-        // Hint for the waitFor fast path: key-presence prefilter that never
-        // reads values (no getter side effects, no toString). See mayMatchProps.
-        (filter as any)._goonProps = props;
-        return filter;
-    },
+            : m => props.every(p => m[p] !== void 0),
 
     byCode: (...code: CodeFilter): FilterFn => {
         const parsedCode = code.map(canonicalizeMatch);
@@ -804,43 +799,6 @@ export function extractAndLoadChunksLazy(code: CodeFilter, matcher = DefaultExtr
 
     return makeLazy(() => extractAndLoadChunks(code, matcher));
 }
-
-/**
- * Key-presence prefilter for byProps waitFor filters. Returns false only when
- * NO hinted prop exists on the module or any nested export — in which case the
- * full filter is guaranteed false (byProps needs all props on one object).
- * Uses `in` (proto-chain included, getters never invoked); any throw or
- * exotic shape conservatively returns true so matching stays exact.
- */
-export function mayMatchProps(exports: any, props: string[]): boolean {    if (exports == null) return false;
-    if (typeof exports !== "object" && typeof exports !== "function") return false;
-    try {
-        for (const p of props) {
-            if (p in exports) return true;
-        }
-        if (typeof exports !== "object") return false;
-        for (const k in exports) {
-            let nested: any;
-            try {
-                nested = exports[k];
-            } catch {
-                continue;
-            }
-            if (nested == null || (typeof nested !== "object" && typeof nested !== "function")) continue;
-            try {
-                for (const p of props) {
-                    if (p in nested) return true;
-                }
-            } catch {
-                return true;
-            }
-        }
-    } catch {
-        return true;
-    }
-    return false;
-}
-
 /**
  * Wait for a module that matches the provided filter to be registered,
  * then call the callback with the module as the first argument

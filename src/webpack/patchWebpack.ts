@@ -14,7 +14,7 @@ import { Patch, PatchReplacement } from "@utils/types";
 import { WebpackRequire } from "@vencord/discord-types/webpack";
 
 import { AnyModuleFactory, AnyWebpackRequire, MaybePatchedModuleFactory, PatchedModuleFactory } from "./types";
-import { _blacklistBadModules, _initWebpack, factoryListeners, findModuleFactory, mayMatchProps, moduleListeners, waitForSubscriptions, wreq } from "./webpack";
+import { _blacklistBadModules, _initWebpack, factoryListeners, findModuleFactory, moduleListeners, waitForSubscriptions, wreq } from "./webpack";
 
 export const patches = [] as Patch[];
 
@@ -466,10 +466,6 @@ function runFactoryWithWrap(patchedFactory: PatchedModuleFactory, thisArg: unkno
     const subs = Array.from(waitForSubscriptions);
     for (const [filter, callback] of subs) {
         if (!waitForSubscriptions.has(filter)) continue;
-        // Fast path: byProps filters carry their prop list (see filters.byProps);
-        // skip the full test + nested walk when no hinted key can match.
-        const hint = (filter as any)._goonProps as string[] | undefined;
-        if (hint && !mayMatchProps(exports, hint)) continue;
         let matched: any = null;
         try {
             if (filter(exports)) matched = exports;
