@@ -16,20 +16,16 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-const LAZY_UNSET = Symbol("vencord.lazy.unset");
-
 export function makeLazy<T>(factory: () => T, attempts = 5): () => T {
     let tries = 0;
-    let cache: T | typeof LAZY_UNSET = LAZY_UNSET;
+    let cache: T;
     return () => {
-        if (cache === LAZY_UNSET && attempts > tries++) {
-            cache = factory() as T;
+        if (cache === undefined && attempts > tries++) {
+            cache = factory();
             if (cache === undefined && attempts === tries)
                 console.error("Lazy factory failed:", factory);
-            if (cache === undefined && attempts > tries)
-                cache = LAZY_UNSET;
         }
-        return cache as T;
+        return cache;
     };
 }
 
@@ -89,36 +85,21 @@ handler.getOwnPropertyDescriptor = (target, p) => {
  * Note that the example below exists already as an api, see {@link findByPropsLazy}
  * @example const mod = proxyLazy(() => findByProps("blah")); console.log(mod.blah);
  */
-// Single timer per tick instead of one setTimeout per lazy (hundreds at startup)
-let lazyTick = 0;
-let lazyTickScheduled = false;
-function captureLazyTick() {
-    if (!lazyTickScheduled) {
-        lazyTickScheduled = true;
-        setTimeout(() => {
-            lazyTick++;
-            lazyTickScheduled = false;
-        }, 0);
-    }
-    return lazyTick;
-}
-
 export function proxyLazy<T>(factory: () => T, attempts = 5, isChild = false): T {
-    const createdTick = isChild ? -1 : captureLazyTick();
+    let isSameTick = true;
+    if (!isChild)
+        setTimeout(() => isSameTick = false, 0);
 
     let tries = 0;
     const proxyDummy = Object.assign(function () { }, {
-        [SYM_LAZY_CACHED]: LAZY_UNSET as unknown as T,
+        [SYM_LAZY_CACHED]: void 0 as T | undefined,
         [SYM_LAZY_GET]() {
-            if (proxyDummy[SYM_LAZY_CACHED] === LAZY_UNSET && attempts > tries++) {
-                const value = factory() as T;
-                if (value !== undefined) {
-                    proxyDummy[SYM_LAZY_CACHED] = value;
-                } else if (attempts === tries) {
+            if (!proxyDummy[SYM_LAZY_CACHED] && attempts > tries++) {
+                proxyDummy[SYM_LAZY_CACHED] = factory();
+                if (!proxyDummy[SYM_LAZY_CACHED] && attempts === tries)
                     console.error("Lazy factory failed:", factory);
-                }
             }
-            return proxyDummy[SYM_LAZY_CACHED] === LAZY_UNSET ? undefined as T : proxyDummy[SYM_LAZY_CACHED] as T;
+            return proxyDummy[SYM_LAZY_CACHED];
         }
     });
 
@@ -132,7 +113,7 @@ export function proxyLazy<T>(factory: () => T, attempts = 5, isChild = false): T
             // thus, we lazy proxy the get access to make things like destructuring work as expected
             // meow here will also be a lazy
             // `const { meow } = findByPropsLazy("meow");`
-            if (!isChild && createdTick === lazyTick)
+            if (!isChild && isSameTick)
                 return proxyLazy(
                     () => Reflect.get(target[SYM_LAZY_GET](), p, receiver),
                     attempts,

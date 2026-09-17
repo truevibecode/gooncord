@@ -156,9 +156,9 @@ export default definePlugin({
 
     wrapMessageColorProps(colorProps: { colorString: string, colorStrings?: Record<"primaryColor" | "secondaryColor" | "tertiaryColor", string>; }, context: any) {
         try {
-            // Prefer the message's own channel (no store lookup); fall back to selected.
-            const channel = context?.channel ?? ChannelStore.getChannel(SelectedChannelStore.getChannelId());
-            const isDM = channel?.isDM() || channel?.isMultiUserDM();
+            const channelId = SelectedChannelStore.getChannelId();
+            const channel = ChannelStore.getChannel(channelId);
+            const isDM = channel.isDM() || channel.isMultiUserDM();
             const colorString = this.colorIfServer(context);
             if (colorString === colorProps.colorString) return colorProps;
             if (!settings.store.colorInServers && !isDM) return colorProps;

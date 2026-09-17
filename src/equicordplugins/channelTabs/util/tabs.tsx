@@ -179,7 +179,6 @@ export function closeTab(id: number) {
 
     const closed = openTabs.splice(i, 1);
     closedTabs.push(...closed);
-    if (closedTabs.length > 30) closedTabs.splice(0, closedTabs.length - 30);
 
     // the memory leak preventer
     tabStateCache.delete(id);
@@ -223,7 +222,6 @@ export function closeOtherTabs(id: number) {
 
     const removedTabs = openTabs.filter(v => v.id !== id);
     closedTabs.push(...removedTabs.reverse());
-    if (closedTabs.length > 30) closedTabs.splice(0, closedTabs.length - 30);
     const lastTab = openTabs.find(v => v.id === currentlyOpenTab)!;
     replaceArray(openTabs, tab);
     setOpenTab(id);
@@ -239,7 +237,6 @@ export function closeTabsToTheRight(id: number) {
 
     const tabsToTheRight = openTabs.filter((_, ind) => ind > i);
     closedTabs.push(...tabsToTheRight.reverse());
-    if (closedTabs.length > 30) closedTabs.splice(0, closedTabs.length - 30);
     const tabsToTheLeft = openTabs.filter((_, ind) => ind <= i);
     replaceArray(openTabs, ...tabsToTheLeft);
 
@@ -253,7 +250,6 @@ export function closeTabsToTheLeft(id: number) {
 
     const tabsToTheLeft = openTabs.filter((_, ind) => ind < i);
     closedTabs.push(...tabsToTheLeft.reverse());
-    if (closedTabs.length > 30) closedTabs.splice(0, closedTabs.length - 30);
     const tabsToTheRight = openTabs.filter((_, ind) => ind >= i);
     replaceArray(openTabs, ...tabsToTheRight);
 
@@ -560,7 +556,6 @@ export function setOpenTab(id: number) {
 
     currentlyOpenTab = id;
     openTabHistory.push(id);
-    if (openTabHistory.length > 100) openTabHistory.splice(0, openTabHistory.length - 100);
 }
 
 export function setUpdaterFunction(fn: UpdateFunction): () => void {

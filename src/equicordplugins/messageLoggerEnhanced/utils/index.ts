@@ -56,10 +56,9 @@ export function reAddDeletedMessages(messages: LoggedMessageJSON[], deletedMessa
     const reAddIDs = savedIDs.slice(lowestIDX, highestIDX + 1);
     reAddIDs.push(...IDs);
     reAddIDs.sort((a, b) => b.time - a.time);
-    const existingIds = new Set(messages.map(e => e.id));
     for (let i = 0, len = reAddIDs.length; i < len; i++) {
         const { id, message } = reAddIDs[i];
-        if (existingIds.has(id)) continue;
+        if (messages.findIndex(e => e.id === id) !== -1) continue;
         if (!message) continue;
         messages.splice(i, 0, message);
     }

@@ -59,9 +59,8 @@ const nodeCommonOpts = {
     external: ["electron", "original-fs", "~pluginNatives", ...commonOpts.external]
 };
 
-const sourceMapFooter = s => (watch || !IS_REPORTER) ? "" : `//# sourceMappingURL=vencord://${s}.js.map`;
-/** @type {import("esbuild").BuildOptions["sourcemap"]} */
-const sourcemap = watch ? "inline" : IS_REPORTER ? "external" : false;
+const sourceMapFooter = s => watch ? "" : `//# sourceMappingURL=vencord://${s}.js.map`;
+const sourcemap = watch ? "inline" : "external";
 
 /**
  * @type {import("esbuild").Plugin}
@@ -174,7 +173,7 @@ const buildConfigs = ([
         }
     },
 
-    // Vencord Desktop main & renderer & preload (opt-in via --equibop, see below)
+    // Vencord Desktop main & renderer & preload
     {
         ...nodeCommonOpts,
         entryPoints: [join(dirname(fileURLToPath(import.meta.url)), "../../src/main/index.ts")],
@@ -227,25 +226,20 @@ const buildConfigs = ([
     }
 ]);
 
-// Gooncord is Discord-desktop first: the equibop configs (indices 3-5) only
-// build with --equibop. Skipping them halves build time and ~17MB of output.
-const BUILD_EQUIBOP = process.argv.includes("--equibop");
-const activeConfigs = BUILD_EQUIBOP ? buildConfigs : buildConfigs.slice(0, 3);
-
-await buildOrWatchAll(activeConfigs);
+await buildOrWatchAll(buildConfigs);
 
 await Promise.all([
     writeFile("dist/desktop/package.json", JSON.stringify({
         name: "equicord",
         main: "patcher.js"
     })),
-    ...(BUILD_EQUIBOP ? [writeFile("dist/equibop/package.json", JSON.stringify({
+    writeFile("dist/equibop/package.json", JSON.stringify({
         name: "equicord",
         main: "main.js"
-    }))] : [])
+    }))
 ]);
 
 await Promise.all([
     createPackage("dist/desktop", "dist/desktop.asar"),
-    ...(BUILD_EQUIBOP ? [createPackage("dist/equibop", "dist/equibop.asar")] : [])
+    createPackage("dist/equibop", "dist/equibop.asar"),
 ]);

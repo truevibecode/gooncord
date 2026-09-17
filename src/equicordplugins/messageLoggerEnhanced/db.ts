@@ -63,11 +63,6 @@ async function cacheRecord(record?: DBMessageRecord | null) {
     if (!record) return record;
 
     stripTransientRenderState(record.message);
-    // Bound: long sessions with unlimited limit would otherwise mirror the whole IDB in RAM.
-    if (cachedMessages.size >= 500 && !cachedMessages.has(record.message_id)) {
-        const oldest = cachedMessages.keys().next().value!;
-        cachedMessages.delete(oldest);
-    }
     cachedMessages.set(record.message_id, record.message);
     return record;
 }
@@ -84,55 +79,41 @@ export async function initIDB() {
         }
     });
 }
-// No top-level initIDB() call: opening the log DB at bundle eval contends
-// with VencordData open and costs boot even when the plugin is disabled.
-// Every accessor below ensures init instead.
-async function ensureDB() {
-    if (!db) await initIDB();
-}
+initIDB();
 
 export async function hasMessageIDB(message_id: string) {
-    await ensureDB();
     return cachedMessages.has(message_id) || (await db.count("messages", message_id)) > 0;
 }
 
 export async function countMessagesIDB() {
-    await ensureDB();
     return db.count("messages");
 }
 
 export async function countMessagesByStatusIDB(status: DBMessageStatus) {
-    await ensureDB();
     return db.countFromIndex("messages", "by_status", status);
 }
 
 export async function getAllMessagesIDB() {
-    await ensureDB();
     return cacheRecords(await db.getAll("messages"));
 }
 
 export async function getMessagesForChannelIDB(channel_id: string) {
-    await ensureDB();
     return cacheRecords(await db.getAllFromIndex("messages", "by_channel_id", channel_id));
 }
 
 export async function getMessageIDB(message_id: string) {
-    await ensureDB();
     return cacheRecord(await db.get("messages", message_id));
 }
 
 export async function getMessagesByStatusIDB(status: DBMessageStatus) {
-    await ensureDB();
     return cacheRecords(await db.getAllFromIndex("messages", "by_status", status));
 }
 
 export async function getOldestMessagesIDB(limit: number) {
-    await ensureDB();
     return cacheRecords(await db.getAllFromIndex("messages", "by_timestamp", undefined, limit));
 }
 
 export async function* iterateAllMessagesIDB(batchSize = 100) {
-    await ensureDB();
     let lastId: string | undefined;
     while (true) {
         const batch: DBMessageRecord[] = [];
@@ -157,7 +138,6 @@ export async function* iterateAllMessagesIDB(batchSize = 100) {
 }
 
 export async function getOlderThanTimestampIDB(timestamp: string) {
-    await ensureDB();
     const tx = db.transaction("messages", "readonly");
     const { store } = tx;
     const index = store.index("by_timestamp");
@@ -188,7 +168,6 @@ export async function getOlderThanTimestampForGuildsIDB(timestamp: string, curre
 }
 
 export async function getDateStortedMessagesByStatusIDB(newest: boolean, limit: number, status: DBMessageStatus) {
-    await ensureDB();
     const tx = db.transaction("messages", "readonly");
     const { store } = tx;
     const index = store.index("by_status");
@@ -211,7 +190,6 @@ export async function getDateStortedMessagesByStatusIDB(newest: boolean, limit: 
 }
 
 export async function getMessagesByChannelAndAfterTimestampIDB(channel_id: string, start: string) {
-    await ensureDB();
     const tx = db.transaction("messages", "readonly");
     const { store } = tx;
     const index = store.index("by_timestamp_and_message_id");
@@ -248,7 +226,6 @@ export async function addMessageIDB(message: LoggedMessageJSON, status: DBMessag
 export async function addMessagesBulkIDB(messages: LoggedMessageJSON[], status?: DBMessageStatus) {
     messages.forEach(stripTransientRenderState);
 
-    await ensureDB();
     const tx = db.transaction("messages", "readwrite");
     const { store } = tx;
 
@@ -266,14 +243,12 @@ export async function addMessagesBulkIDB(messages: LoggedMessageJSON[], status?:
 }
 
 export async function deleteMessageIDB(message_id: string) {
-    await ensureDB();
     await db.delete("messages", message_id);
 
     cachedMessages.delete(message_id);
 }
 
 export async function deleteMessagesBulkIDB(message_ids: string[]) {
-    await ensureDB();
     const tx = db.transaction("messages", "readwrite");
     const { store } = tx;
 

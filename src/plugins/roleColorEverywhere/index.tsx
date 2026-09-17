@@ -27,10 +27,6 @@ import { ChannelStore, GuildMemberStore, GuildRoleStore, GuildStore } from "@web
 
 const useMessageAuthor = findByCodeLazy('"Result cannot be null because the message is not null"');
 
-// Bounded TTL cache: role colors change rarely; avoids 3 store lookups per node.
-const COLOR_CACHE_TTL = 30_000;
-const colorStringCache = new Map<string, { v: string | null; t: number; }>();
-
 const settings = definePluginSettings({
     chatMentions: {
         type: OptionType.BOOLEAN,
@@ -169,30 +165,21 @@ export default definePlugin({
     ],
 
     getColorString(userId: string, channelOrGuildId: string) {
-        const cacheKey = userId + ":" + channelOrGuildId;
-        const hit = colorStringCache.get(cacheKey);
-        if (hit && Date.now() - hit.t < COLOR_CACHE_TTL) return hit.v;
-
-        let v: string | null = null;
         try {
             if (Settings.plugins.CustomUserColors.enabled) {
                 const customColor = getCustomColorString(userId, true);
-                if (customColor) v = customColor;
+                if (customColor) return customColor;
             }
 
-            if (v == null) {
-                const guildId = ChannelStore.getChannel(channelOrGuildId)?.guild_id ?? GuildStore.getGuild(channelOrGuildId)?.id;
-                if (guildId != null) {
-                    v = GuildMemberStore.getMember(guildId, userId)?.colorString ?? null;
-                }
-            }
+            const guildId = ChannelStore.getChannel(channelOrGuildId)?.guild_id ?? GuildStore.getGuild(channelOrGuildId)?.id;
+            if (guildId == null) return null;
+
+            return GuildMemberStore.getMember(guildId, userId)?.colorString ?? null;
         } catch (e) {
             new Logger("RoleColorEverywhere").error("Failed to get color string", e);
         }
 
-        if (colorStringCache.size >= 1000) colorStringCache.clear();
-        colorStringCache.set(cacheKey, { v, t: Date.now() });
-        return v;
+        return null;
     },
 
     getColorInt(userId: string, channelOrGuildId: string) {

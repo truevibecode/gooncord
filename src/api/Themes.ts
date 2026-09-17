@@ -62,11 +62,6 @@ async function initThemes() {
     themesStyle ??= createAndAppendStyle("vencord-themes", userStyleRootNode);
 
     const { enabledThemeLinks, enabledThemes } = Settings;
-    // Early exit: most users on Gooncord have no custom themes -> avoid ThemeStore require + sets.
-    if (!enabledThemes.length && !enabledThemeLinks.length) {
-        themesStyle.textContent = "";
-        return;
-    }
 
     const { ThemeStore } = require("@webpack/common/stores") as typeof import("@webpack/common/stores");
 

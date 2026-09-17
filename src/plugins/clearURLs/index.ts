@@ -47,39 +47,6 @@ interface RuleSet {
     exceptions?: RegExp[];
 }
 
-// Prefilter index: full provider scan per sent URL tested every urlPattern
-// regex. Index by longest alphanumeric token in the pattern so most URLs
-// only test a handful of candidates (regex still decides matches).
-let rulesIndexFor: RuleSet[] | null = null;
-let rulesIndexGlobal: RuleSet[] = [];
-let rulesIndexByToken = new Map<string, RuleSet[]>();
-function getCandidates(rules: RuleSet[], hrefLower: string): RuleSet[] {
-    if (rulesIndexFor !== rules) {
-        rulesIndexGlobal = [];
-        rulesIndexByToken = new Map();
-        for (const rs of rules) {
-            const runs = rs.urlPattern.source.match(/[a-z0-9]{4,}/gi);
-            let best = "";
-            if (runs) for (const r of runs) if (r.length > best.length) best = r;
-            if (best) {
-                const k = best.toLowerCase();
-                let arr = rulesIndexByToken.get(k);
-                if (!arr) rulesIndexByToken.set(k, arr = []);
-                arr.push(rs);
-            } else {
-                rulesIndexGlobal.push(rs);
-            }
-        }
-        rulesIndexFor = rules;
-    }
-    if (rulesIndexByToken.size === 0) return rules;
-    const out = [...rulesIndexGlobal];
-    for (const [token, list] of rulesIndexByToken) {
-        if (hrefLower.includes(token)) out.push(...list);
-    }
-    return out;
-}
-
 export default definePlugin({
     name: "ClearURLs",
     description: "Automatically removes tracking elements from URLs you send",
@@ -140,10 +107,9 @@ export default definePlugin({
         // Cheap way to check if there are any search params
         if (url.searchParams.entries().next().done) return match;
 
-        // Check rules for each candidate provider (prefiltered by token;
-        // regex still decides the actual match, so semantics are unchanged).
-        for (const { urlPattern, exceptions, rawRules, rules } of getCandidates(this.rules, url.href.toLowerCase())) {
-            if (!urlPattern.test(url.href) || exceptions?.some(ex => ex.test(url.href))) continue;
+        // Check rules for each provider that matches
+        this.rules.forEach(({ urlPattern, exceptions, rawRules, rules }) => {
+            if (!urlPattern.test(url.href) || exceptions?.some(ex => ex.test(url.href))) return;
 
             const toDelete: string[] = [];
 
@@ -165,7 +131,7 @@ export default definePlugin({
                 cleanedUrl = cleanedUrl.replace(rawRule, "");
             });
             url = new URL(cleanedUrl);
-        }
+        });
 
         return url.toString();
     },

@@ -214,9 +214,8 @@ async function processMessageFetch(response: FetchMessagesResponse) {
             m.status === idb.DBMessageStatus.GHOST_PINGED
         );
 
-        const messagesById = new Map(messages.map(m => [m.message_id, m] as const));
         for (const recivedMessage of response.body) {
-            const record = messagesById.get(recivedMessage.id);
+            const record = messages.find(m => m.message_id === recivedMessage.id);
 
             if (record == null) continue;
 
@@ -225,8 +224,7 @@ async function processMessageFetch(response: FetchMessagesResponse) {
             }
         }
 
-        const fetchUser = (id: string) => UserStore.getUser(id) || authorsById.get(id);
-        const authorsById = new Map(response.body.map(e => [e.author.id, e.author] as const));
+        const fetchUser = (id: string) => UserStore.getUser(id) || response.body.find(e => e.author.id === id);
 
         for (let i = 0, len = messages.length; i < len; i++) {
             const record = messages[i];
@@ -375,10 +373,6 @@ export default definePlugin({
 
         // we have to do this because the original message logger fetches the message from the store now
         MessageStore.getMessage = (channelId: string, messageId: string) => {
-            // Fast path: logging off means no deleted/edited overlay to serve.
-            if (!settings.store.saveMessages)
-                return this.oldGetMessage(channelId, messageId);
-
             const MLMessage = idb.cachedMessages.get(messageId);
             if (!MLMessage)
                 return this.oldGetMessage(channelId, messageId);

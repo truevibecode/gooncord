@@ -24,7 +24,7 @@ import { useTheme } from "@plugins/shikiCodeblocks.desktop/hooks/useTheme";
 import { hex2Rgb } from "@plugins/shikiCodeblocks.desktop/utils/color";
 import { cl, hljs, requireHljs, shouldUseHljs } from "@plugins/shikiCodeblocks.desktop/utils/misc";
 import { useAwaiter, useIntersection } from "@utils/react";
-import { React, useEffect, useMemo } from "@webpack/common";
+import { React, useEffect } from "@webpack/common";
 
 import { ButtonRow } from "./ButtonRow";
 import { Code } from "./Code";
@@ -87,21 +87,14 @@ export const Highlighter = ({
         deps: [lang, content, currentThemeId, isIntersecting],
     });
 
-    const themeBase: ThemeBase = useMemo(() => ({
+    const themeBase: ThemeBase = {
         plainColor: currentTheme?.fg || "var(--text-default)",
         accentBgColor:
             currentTheme?.colors?.["statusBar.background"] || (useHljs ? "#7289da" : "#007BC8"),
         accentFgColor: currentTheme?.colors?.["statusBar.foreground"] || "#FFF",
         backgroundColor:
             currentTheme?.colors?.["editor.background"] || "var(--background-base-lower)",
-    }), [currentTheme, useHljs]);
-
-    const themeBackground = useMemo(() => useHljs
-        ? themeBase.backgroundColor
-        : `rgba(${hex2Rgb(themeBase.backgroundColor)
-            .concat(bgOpacity / 100)
-            .join(", ")})`,
-        [themeBase, useHljs, bgOpacity]);
+    };
 
     let langName;
     if (lang) langName = useHljs ? hljs?.getLanguage?.(lang)?.name : shikiLang?.name;
@@ -111,7 +104,11 @@ export const Highlighter = ({
             ref={rootRef}
             className={cl("root", { plain: !langName, preview: isPreview })}
             style={{
-                backgroundColor: themeBackground,
+                backgroundColor: useHljs
+                    ? themeBase.backgroundColor
+                    : `rgba(${hex2Rgb(themeBase.backgroundColor)
+                        .concat(bgOpacity / 100)
+                        .join(", ")})`,
                 color: themeBase.plainColor,
             }}
         >

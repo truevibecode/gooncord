@@ -6,6 +6,7 @@
 
 import { User } from "@vencord/discord-types";
 import { IconUtils, UserStore } from "@webpack/common";
+import { applyPalette, GIFEncoder, quantize } from "gifenc";
 
 import { CANVAS_CONFIG, CanvasConfig, FONT_SIZES, FontSizeCalculation, QuoteFont, QuoteImageOptions, SPACING } from "./types";
 
@@ -91,8 +92,6 @@ export function resetFontLoading() {
 }
 
 async function canvasToGif(canvas: HTMLCanvasElement): Promise<Blob> {
-    // Loaded on demand: gifenc only needed when quoting to GIF.
-    const { applyPalette, GIFEncoder, quantize } = await import("gifenc");
     const gif = GIFEncoder();
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Failed to get 2D rendering context");

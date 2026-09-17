@@ -29,17 +29,9 @@ if (location.protocol !== "data:") {
     invoke(IpcEvents.INIT_FILE_WATCHERS);
 
     if (IS_DISCORD_DESKTOP) {
-        // Classic eval handoff (reverted from vencord:// script-tag loading:
-        // the scheme path is kept served for later, but the tag changed
-        // renderer load interleaving and is suspect in the settings-render
-        // crash loop). Never swallow errors: silent catch = "looks vanilla".
-        webFrame.executeJavaScript(sendSync<string>(IpcEvents.PRELOAD_GET_RENDERER_JS)).catch((err: any) =>
-            console.error("[Gooncord] Renderer eval failed:", err?.message ?? err, err?.stack?.slice(0, 2000) ?? "")
-        );
+        webFrame.executeJavaScript(sendSync<string>(IpcEvents.PRELOAD_GET_RENDERER_JS));
         // Not supported in sandboxed preload scripts but Discord doesn't support it either so who cares
-        const discordPreload = process.env.DISCORD_PRELOAD;
-        if (discordPreload) require(discordPreload);
-        else console.error("[Gooncord] DISCORD_PRELOAD env missing, skipping Discord preload.");
+        require(process.env.DISCORD_PRELOAD!);
     }
 } // Monaco popout
 else {

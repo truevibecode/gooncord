@@ -32,58 +32,26 @@ type TimeRowProps = {
     pluginSettings: any;
 };
 
-let thresholdsInit = false;
-// Shared 30s broadcaster: one interval for all visible timestamps instead
-// of one timer per message instance (50+ wakeups/sec before).
-const timestampTickListeners = new Set<() => void>();
-let timestampTicker: ReturnType<typeof setInterval> | undefined;
-function subscribeTimestampTick(fn: () => void): () => void {
-    timestampTickListeners.add(fn);
-    if (timestampTicker == null) {
-        timestampTicker = setInterval(() => {
-            timestampTickListeners.forEach(tick => {
-                try { tick(); } catch { /* ignore */ }
-            });
-            if (timestampTickListeners.size === 0 && timestampTicker != null) {
-                clearInterval(timestampTicker);
-                timestampTicker = undefined;
-            }
-        }, 30000);
-        (timestampTicker as unknown as { unref?: () => void; })?.unref?.();
-    }
-    return () => {
-        timestampTickListeners.delete(fn);
-    };
-}
 const format = (date: Date, formatTemplate: string): string => {
-    // Lazy one-time init (NOT top-level): moment is a webpack lazy, unavailable at bundle eval.
-    // Doing this at import time throws and kills the whole renderer -> vanilla Discord.
-    if (!thresholdsInit) {
-        thresholdsInit = true;
-        try {
-            moment.relativeTimeThreshold("s", 60);
-            moment.relativeTimeThreshold("ss", -1);
-            moment.relativeTimeThreshold("m", 60);
-        } catch { }
-    }
     const mmt = moment(date);
+
+    moment.relativeTimeThreshold("s", 60);
+    moment.relativeTimeThreshold("ss", -1);
+    moment.relativeTimeThreshold("m", 60);
 
     const sameDayFormat = settings.store?.formats?.sameDayFormat || timeFormats.sameDayFormat.default;
     const lastDayFormat = settings.store?.formats?.lastDayFormat || timeFormats.lastDayFormat.default;
     const lastWeekFormat = settings.store?.formats?.lastWeekFormat || timeFormats.lastWeekFormat.default;
     const sameElseFormat = settings.store?.formats?.sameElseFormat || timeFormats.sameElseFormat.default;
 
-    let out = mmt.format(formatTemplate);
-    if (formatTemplate.includes("calendar"))
-        out = out.replace("calendar", () => mmt.calendar(null, {
+    return mmt.format(formatTemplate)
+        .replace("calendar", () => mmt.calendar(null, {
             sameDay: sameDayFormat,
             lastDay: lastDayFormat,
             lastWeek: lastWeekFormat,
             sameElse: sameElseFormat
-        }));
-    if (formatTemplate.includes("relative"))
-        out = out.replace("relative", () => mmt.fromNow());
-    return out;
+        }))
+        .replace("relative", () => mmt.fromNow());
 };
 
 const TimeRow = (props: TimeRowProps) => {
@@ -224,9 +192,11 @@ export default definePlugin({
         }
 
         useEffect(() => {
-            if (!formatTemplate.includes("calendar") && !formatTemplate.includes("relative")) return;
-            return subscribeTimestampTick(forceUpdater);
-        }, [formatTemplate]);
+            if (formatTemplate.includes("calendar") || formatTemplate.includes("relative")) {
+                const interval = setInterval(forceUpdater, 1000);
+                return () => clearInterval(interval);
+            }
+        }, []);
 
         return format(date, formatTemplate);
     }

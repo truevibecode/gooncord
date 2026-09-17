@@ -23,6 +23,7 @@ import { makeLazy } from "@utils/lazy";
 import definePlugin from "@utils/types";
 import { CommandArgument, CommandContext } from "@vencord/discord-types";
 import { DraftType, UploadAttachmentStore, UploadHandler, UploadManager, UserUtils } from "@webpack/common";
+import { GIFEncoder, nearestColorIndex, quantize } from "gifenc";
 
 const DEFAULT_DELAY = 20;
 const DEFAULT_RESOLUTION = 128;
@@ -86,7 +87,7 @@ function rgb888_to_rgb565(r: number, g: number, b: number): number {
     return ((r << 8) & 0xf800) | ((g << 3) & 0x07e0) | (b >> 3);
 }
 
-function applyPaletteTransparent(data: Uint8Array | Uint8ClampedArray, palette: number[][], cache: number[], threshold: number, nearestColorIndex: (palette: number[][], pixel: [number, number, number]) => number): Uint8Array {
+function applyPaletteTransparent(data: Uint8Array | Uint8ClampedArray, palette: number[][], cache: number[], threshold: number): Uint8Array {
     const index = new Uint8Array(Math.floor(data.length / 4));
 
     for (let i = 0; i < index.length; i += 1) {
@@ -172,8 +173,6 @@ export default definePlugin({
 
                 const resolution = findOption(opts, "resolution", DEFAULT_RESOLUTION);
 
-                // Loaded on demand: gifenc only needed when running /petpet.
-                const { GIFEncoder, nearestColorIndex, quantize } = await import("gifenc");
                 const gif = GIFEncoder();
 
                 const paletteImageSize = Math.min(120, resolution);
@@ -208,7 +207,7 @@ export default definePlugin({
                     ctx.drawImage(frames[i], 0, 0, resolution, resolution);
 
                     const { data } = ctx.getImageData(0, 0, resolution, resolution);
-                    const index = applyPaletteTransparent(data, palette, cache, 1, nearestColorIndex);
+                    const index = applyPaletteTransparent(data, palette, cache, 1);
 
                     gif.writeFrame(index, resolution, resolution, {
                         transparent: true,

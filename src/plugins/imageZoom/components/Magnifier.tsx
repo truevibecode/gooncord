@@ -52,17 +52,6 @@ export const Magnifier = ErrorBoundary.wrap<MagnifierProps>(({ instance, size: i
     const currentVideoElementRef = useRef<HTMLVideoElement | null>(null);
     const originalVideoElementRef = useRef<HTMLVideoElement | null>(null);
     const imageRef = useRef<HTMLImageElement | null>(null);
-    // rAF coalescing for mousemove storms + debounced settings persist.
-    const rafId = useRef(0);
-    const pendingWheelSave = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-    const scheduleWheelSave = () => {
-        if (!settings.store.saveZoomValues) return;
-        clearTimeout(pendingWheelSave.current);
-        pendingWheelSave.current = setTimeout(() => {
-            settings.store.zoom = zoom.current;
-            settings.store.size = size.current;
-        }, 150);
-    };
 
     // since we accessing document im gonna use useLayoutEffect
     useLayoutEffect(() => {
@@ -85,23 +74,13 @@ export const Magnifier = ErrorBoundary.wrap<MagnifierProps>(({ instance, size: i
             if (!element.current) return;
 
             if (instance.state.mouseOver && instance.state.mouseDown) {
-                // Coalesce to one update per frame: mousemove fires faster,
-                // and each update paid 2 layout reads + 3 setStates before.
-                if (rafId.current) return;
-                const { pageX, pageY, x, y } = e;
-                rafId.current = requestAnimationFrame(() => {
-                    rafId.current = 0;
-                    const el = element.current;
-                    if (!el || !(instance.state.mouseOver && instance.state.mouseDown)) return;
-                    const offset = size.current / 2;
-                    const rect = el.getBoundingClientRect();
-                    setLensPosition({ x: x - offset, y: y - offset });
-                    setImagePosition({
-                        x: -((pageX - rect.left) * zoom.current - offset),
-                        y: -((pageY - rect.top) * zoom.current - offset)
-                    });
-                    setOpacity(1);
-                });
+                const offset = size.current / 2;
+                const pos = { x: e.pageX, y: e.pageY };
+                const x = -((pos.x - element.current.getBoundingClientRect().left) * zoom.current - offset);
+                const y = -((pos.y - element.current.getBoundingClientRect().top) * zoom.current - offset);
+                setLensPosition({ x: e.x - offset, y: e.y - offset });
+                setImagePosition({ x, y });
+                setOpacity(1);
             } else {
                 setOpacity(0);
             }
@@ -131,13 +110,13 @@ export const Magnifier = ErrorBoundary.wrap<MagnifierProps>(({ instance, size: i
             if (instance.state.mouseOver && instance.state.mouseDown && !isShiftDown.current) {
                 const val = zoom.current + ((e.deltaY / 100) * (settings.store.invertScroll ? -1 : 1)) * settings.store.zoomSpeed;
                 zoom.current = val <= 1 ? 1 : val;
-                scheduleWheelSave();
+                if (settings.store.saveZoomValues) settings.store.zoom = zoom.current;
                 updateMousePosition(e);
             }
             if (instance.state.mouseOver && instance.state.mouseDown && isShiftDown.current) {
                 const val = size.current + (e.deltaY * (settings.store.invertScroll ? -1 : 1)) * settings.store.zoomSpeed;
                 size.current = val <= 50 ? 50 : val;
-                scheduleWheelSave();
+                if (settings.store.saveZoomValues) settings.store.size = size.current;
                 updateMousePosition(e);
             }
         };
@@ -168,8 +147,6 @@ export const Magnifier = ErrorBoundary.wrap<MagnifierProps>(({ instance, size: i
             document.removeEventListener("mousedown", onMouseDown);
             document.removeEventListener("mouseup", onMouseUp);
             document.removeEventListener("wheel", onWheel);
-            if (rafId.current) cancelAnimationFrame(rafId.current);
-            clearTimeout(pendingWheelSave.current);
         };
     }, []);
 

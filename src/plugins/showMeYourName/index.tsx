@@ -97,7 +97,6 @@ function toCSS(color: string | number | null | undefined): string | null {
     toCSSProbe.style.color = "";
     toCSSProbe.style.color = color;
     const result = toCSSProbe.style.color !== "" ? color : null;
-    if (toCSSCache && toCSSCache.size >= 1000) toCSSCache.clear();
     toCSSCache?.set(color, result);
     return result;
 }
@@ -105,25 +104,6 @@ function toCSS(color: string | number | null | undefined): string | null {
 let convertToRGBCanvas: HTMLCanvasElement | null = null;
 let convertToRGBCtx: CanvasRenderingContext2D | null = null;
 let convertToRGBCache: Map<string, [number, number, number] | null> | null = null;
-
-// Cached theme vars: getComputedStyle forces style recalc, don't pay it per message.
-let cachedThemeKey = "";
-let cachedTextStrong: string | null = null;
-let cachedTextMuted = "#72767d";
-function getThemeVars() {
-    const key = document.documentElement.className;
-    if (key !== cachedThemeKey) {
-        cachedThemeKey = key;
-        try {
-            cachedTextStrong = getComputedStyle(document.documentElement).getPropertyValue("--text-strong").trim() || null;
-            cachedTextMuted = getComputedStyle(document.documentElement)?.getPropertyValue("--text-muted")?.trim() || "#72767d";
-        } catch {
-            cachedTextStrong = null;
-            cachedTextMuted = "#72767d";
-        }
-    }
-    return { textStrong: cachedTextStrong, textMuted: cachedTextMuted };
-}
 
 function convertToRGB(color: string): [number, number, number] | null {
     const cached = convertToRGBCache?.get(color);
@@ -137,7 +117,6 @@ function convertToRGB(color: string): [number, number, number] | null {
     convertToRGBCtx.fillRect(0, 0, 1, 1);
     const [r, g, b] = convertToRGBCtx.getImageData(0, 0, 1, 1).data;
     const result: [number, number, number] = [r, g, b];
-    if (convertToRGBCache && convertToRGBCache.size >= 1000) convertToRGBCache.clear();
     convertToRGBCache?.set(color, result);
     return result;
 }
@@ -181,7 +160,7 @@ function resolveColor(
     ircColorsEnabled: boolean,
     shouldShowEffects: boolean,
 ): Record<string, any> | null {
-    const defaultColor = getThemeVars().textStrong;
+    const defaultColor = getComputedStyle(document.documentElement).getPropertyValue("--text-strong").trim() || null;
 
     if (!defaultColor) { return null; }
 
@@ -280,18 +259,6 @@ function splitTemplate(template: string) {
     return items;
 }
 
-// Cached: template strings are few and stable; split+regex per message otherwise.
-const splitTemplateCache = new Map<string, string[]>();
-function splitTemplateCached(template: string): string[] {
-    let v = splitTemplateCache.get(template);
-    if (v === undefined) {
-        v = splitTemplate(template);
-        if (splitTemplateCache.size >= 50) splitTemplateCache.clear();
-        splitTemplateCache.set(template, v);
-    }
-    return v;
-}
-
 function parseTemplateItem(entry: string) {
     const [prefix, suffix] = entry.split(templatePattern);
     const names = entry.replace(prefix, "").replace(suffix, "").trim().replaceAll(/{|}/g, "").split(/,\s*/);
@@ -301,18 +268,6 @@ function parseTemplateItem(entry: string) {
         suffix: suffix ? suffix.trim() : "",
         targetProcessedNames: names.map(name => name.trim()).filter(name => name.length > 0)
     };
-}
-
-// Cached: entries repeat across every row; parse is pure string->object.
-const parseTemplateItemCache = new Map<string, { prefix: string; suffix: string; targetProcessedNames: string[]; }>();
-function parseTemplateItemCached(entry: string) {
-    let v = parseTemplateItemCache.get(entry);
-    if (v === undefined) {
-        v = parseTemplateItem(entry);
-        if (parseTemplateItemCache.size >= 200) parseTemplateItemCache.clear();
-        parseTemplateItemCache.set(entry, v);
-    }
-    return v;
 }
 
 function validTemplate(value: string) {
@@ -737,46 +692,8 @@ function renderUsername(
     const isReaction = isReactionsTooltip || isReactionsPopout;
     const isVoice = type === "voiceChannel";
 
-    const config = hookless ? settings.store : settings.use(["messages", "replies", "mentions", "typingIndicator", "memberList", "searchAutocomplete", "styleDirectMessagesList", "styleDirectMessagesMessages", "styleFriendsList", "styleActiveNow", "profilePopout", "reactions", "friendNameOnlyInDirectMessages", "customNameOnlyInDirectMessages", "discriminators", "hideDefaultAtSign", "truncateAllNamesWithStreamerMode", "removeDuplicates", "ignoreEffects", "ignoreFonts", "animateEffects", "alwaysAnimateEffects", "gradientGlow", "includedNames", "customNameColor", "friendNameColor", "nicknameColor", "displayNameColor", "usernameColor", "nameSeparator"]);
-    const { messages, replies, mentions, typingIndicator, memberList, searchAutocomplete, styleDirectMessagesMessages, profilePopout, reactions, friendNameOnlyInDirectMessages, customNameOnlyInDirectMessages, discriminators, truncateAllNamesWithStreamerMode, removeDuplicates, ignoreEffects, ignoreFonts, animateEffects, includedNames, customNameColor, friendNameColor, nicknameColor, displayNameColor, usernameColor, nameSeparator } = config;
-
-    // Data invalidation (nicknames, flux events): rare, fans out to all rows.
-    const [, setDataTick] = useState(0);
-    useEffect(() => {
-        const fn = () => setDataTick(t => t + 1);
-        dataTickListeners.add(fn);
-        return () => {
-            dataTickListeners.delete(fn);
-        };
-    }, []);
-
-    // Hover invalidation: only re-render when THIS row's hover relevance flips.
-    // Unrelated rows never call setState, so a hover costs 1-2 renders, not N.
-    const [, setHoverTick] = useState(0);
-    useEffect(() => {
-        const relevantNow = () => {
-            const msg = channelId && messageId ? MessageStore.getMessage(channelId, messageId) : null;
-            const gid = (msg as any)?.showMeYourNameGroupId || null;
-            return (isMessage || isMention)
-                ? Boolean((messageId && hoveringMessageMap.has(messageId)) || (gid && hoveringMessageMap.has(gid)))
-                : isReply
-                    ? Boolean((messageId && hoveringRepliesMap.has(messageId)) || (gid && hoveringRepliesMap.has(gid)))
-                    : false;
-        };
-        let last = relevantNow();
-        const fn = () => {
-            const now = relevantNow();
-            if (now !== last) {
-                last = now;
-                setHoverTick(t => t + 1);
-            }
-        };
-        hoverTickListeners.add(fn);
-        fn();
-        return () => {
-            hoverTickListeners.delete(fn);
-        };
-    }, [channelId, messageId, isMessage, isMention, isReply]);
+    const config = hookless ? settings.store : settings.use(["messages", "replies", "mentions", "typingIndicator", "memberList", "searchAutocomplete", "styleDirectMessagesList", "styleDirectMessagesMessages", "styleFriendsList", "styleActiveNow", "profilePopout", "reactions", "friendNameOnlyInDirectMessages", "customNameOnlyInDirectMessages", "discriminators", "hideDefaultAtSign", "truncateAllNamesWithStreamerMode", "removeDuplicates", "ignoreEffects", "ignoreFonts", "animateEffects", "alwaysAnimateEffects", "gradientGlow", "includedNames", "customNameColor", "friendNameColor", "nicknameColor", "displayNameColor", "usernameColor", "nameSeparator", "triggerNameRerender"]);
+    const { messages, replies, mentions, typingIndicator, memberList, searchAutocomplete, styleDirectMessagesMessages, profilePopout, reactions, friendNameOnlyInDirectMessages, customNameOnlyInDirectMessages, discriminators, truncateAllNamesWithStreamerMode, removeDuplicates, ignoreEffects, ignoreFonts, animateEffects, includedNames, customNameColor, friendNameColor, nicknameColor, displayNameColor, usernameColor, nameSeparator, triggerNameRerender } = config;
 
     const channel = channelId ? ChannelStore.getChannel(channelId) || null : null;
     const message = channelId && messageId ? MessageStore.getMessage(channelId, messageId) : null;
@@ -818,8 +735,8 @@ function renderUsername(
     const topRoleStyle = author ? resolveColor(authorColorStrings, authorDisplayNameStyles, "Role", canUseGradient, inGuild, ircColorsEnabled, shouldShowHoverEffects) : null;
     const hasGradient = !!topRoleStyle?.gradient && Object.keys(topRoleStyle.gradient).length > 0;
 
-    const textMutedValue = getThemeVars().textMuted;
-    const options = splitTemplateCached(includedNames);
+    const textMutedValue = getComputedStyle(document.documentElement)?.getPropertyValue("--text-muted")?.trim() || "#72767d";
+    const options = splitTemplate(includedNames);
     const resolvedUsernameColor = author ? resolveColor(authorColorStrings, authorDisplayNameStyles, usernameColor.trim(), canUseGradient, inGuild, ircColorsEnabled, shouldShowHoverEffects) : null;
     const resolvedDisplayNameColor = author ? resolveColor(authorColorStrings, authorDisplayNameStyles, displayNameColor.trim(), canUseGradient, inGuild, ircColorsEnabled, shouldShowHoverEffects) : null;
     const resolvedNicknameColor = author ? resolveColor(authorColorStrings, authorDisplayNameStyles, nicknameColor.trim(), canUseGradient, inGuild, ircColorsEnabled, shouldShowHoverEffects) : null;
@@ -839,7 +756,7 @@ function renderUsername(
     const outputs: any[] = [];
 
     for (const option of options) {
-        const { prefix, suffix, targetProcessedNames } = parseTemplateItemCached(option);
+        const { prefix, suffix, targetProcessedNames } = parseTemplateItem(option);
         let chosenName: string | null = null;
         let chosenStyle: object | null = null;
         let chosenType = "";
@@ -1101,22 +1018,6 @@ function renderUsername(
 const hoveringMessageMap = new Map<string, number>();
 const hoveringRepliesMap = new Map<string, number>();
 
-// Targeted hover invalidation: flipping a global setting re-rendered EVERY
-// name row per hover enter/exit. Rows subscribe below and only bump when
-// their own hover relevance changed (React bails out otherwise).
-const hoverTickListeners = new Set<(v: number) => void>();
-let hoverTick = 0;
-function bumpHoverTick() {
-    hoverTick++;
-    hoverTickListeners.forEach(fn => {
-        try { fn(hoverTick); } catch { /* ignore */ }
-    });
-}
-// Data changes (nicknames, flux events, template edits) still fan out to all
-// rows, but those are rare unlike hover. No settings-file write per event.
-const dataTickListeners = new Set<(v: number) => void>();
-let dataTick = 0;
-
 function handleHoveringMessage(message: any, isHovered: boolean) {
     const messageId = message?.id;
     const repliedId = message?.messageReference?.message_id;
@@ -1144,7 +1045,7 @@ function addHoveringMessage(id: string) {
     hoveringMessageMap.set(id, currentCount + 1);
 
     if (currentCount === 0) {
-        bumpHoverTick();
+        triggerNameRerender();
     }
 }
 
@@ -1155,7 +1056,7 @@ function removeHoveringMessage(id: string) {
 
     if (currentCount <= 1) {
         hoveringMessageMap.delete(id);
-        bumpHoverTick();
+        triggerNameRerender();
     } else {
         hoveringMessageMap.set(id, currentCount - 1);
     }
@@ -1168,7 +1069,7 @@ function addHoveringReply(id: string) {
     hoveringRepliesMap.set(id, currentCount + 1);
 
     if (currentCount === 0) {
-        bumpHoverTick();
+        triggerNameRerender();
     }
 }
 
@@ -1179,7 +1080,7 @@ function removeHoveringReply(id: string) {
 
     if (currentCount <= 1) {
         hoveringRepliesMap.delete(id);
-        bumpHoverTick();
+        triggerNameRerender();
     } else {
         hoveringRepliesMap.set(id, currentCount - 1);
     }
@@ -1190,18 +1091,11 @@ function useNameHoverState() {
 }
 
 function triggerNameRerender() {
-    dataTick++;
-    dataTickListeners.forEach(fn => {
-        try { fn(dataTick); } catch { /* ignore */ }
-    });
+    settings.store.triggerNameRerender = !settings.store.triggerNameRerender;
 }
 
 function CustomNicknameModal({ modalProps, user }: { modalProps: RenderModalProps; user: User; }) {
     const [value, setValue] = useState(customNicknames[user.id] ?? "");
-    // Context-menu user objects can be partial (no globalName cached yet),
-    // which showed the raw username as the placeholder. Resolve the full
-    // store user first so the editor always shows the real display name.
-    const fullUser = UserStore.getUser(user.id) ?? user;
 
     return (
         <Modal
@@ -1244,7 +1138,7 @@ function CustomNicknameModal({ modalProps, user }: { modalProps: RenderModalProp
                 value={value}
                 maxLength={32}
                 onChange={setValue}
-                placeholder={fullUser.globalName ?? fullUser.username}
+                placeholder={user.globalName ?? user.username}
                 style={{ width: "100%" }}
             />
             <TextButton

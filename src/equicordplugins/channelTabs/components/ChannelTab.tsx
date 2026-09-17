@@ -7,7 +7,7 @@
 import { BaseText } from "@components/BaseText";
 import { ChannelTabsProps, closeTab, ensureUnreadFallbackCountsLoaded, getNotificationDotState, getUnreadFallbackCounts, isTabSelected, moveDraggedTabs, moveToTab, openedTabs, settings, updateUnreadFallbackCounts } from "@equicordplugins/channelTabs/util";
 import { ActivityIcon, CircleQuestionIcon, DiscoveryIcon, EnvelopeIcon, FriendsIcon, ICYMIIcon, NitroIcon, QuestIcon, ShopIcon } from "@equicordplugins/channelTabs/util/icons";
-import { hasActiveAutoCompletes } from "@equicordplugins/questify/utils/completion";
+import { getActiveAutoCompletes } from "@equicordplugins/questify/utils/completion";
 import { classNameFactory } from "@utils/css";
 import { getGuildAcronym, getIntlMessage } from "@utils/discord";
 import { classes } from "@utils/misc";
@@ -97,10 +97,7 @@ export const NotificationDot = ({ channelIds }: { channelIds: string[]; }) => {
     const channelStateKey = channelIds.join(",");
     const channelStates = useStateFromStores(
         [ActiveJoinedThreadsStore, ReadStateStore],
-        () => channelIds.map(getChannelUnreadState),
-        [channelStateKey],
-        (a, b) => a.length === b.length && a.every((s, i) =>
-            s.hasUnread === b[i].hasUnread && s.mentionCount === b[i].mentionCount && s.unreadCount === b[i].unreadCount)
+        () => channelIds.map(getChannelUnreadState)
     );
     const stateSignature = channelStates.map(state => `${state.channelId}:${Number(state.hasUnread)}:${state.mentionCount}:${state.unreadCount}`).join("|");
     const { badgeText, hasMention, shouldShow } = getNotificationDotState(
@@ -190,9 +187,7 @@ function ChannelTabContent(props: ChannelTabsProps & {
                 PresenceStore.getStatus(recipientId),
                 PresenceStore.isMobileOnline(recipientId)
             ];
-        },
-        [props.channelId, recipients?.join(","), userId],
-        (a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2]
+        }
     );
 
     if (guild) {
@@ -469,7 +464,7 @@ export default function ChannelTab(props: ChannelTabsProps & { index: number; })
     }), []);
     drag(drop(ref));
 
-    const hasActiveQuests = hasActiveAutoCompletes();
+    const hasActiveQuests = getActiveAutoCompletes().length > 0;
     return <div
         className={cl("tab", {
             "tab-compact": compact,

@@ -21,12 +21,7 @@ export function sendSync<T = any>(event: IpcEvents, ...args: any[]) {
 }
 
 const PluginHelpers = {} as Record<string, Record<string, (...args: any[]) => Promise<any>>>;
-let pluginIpcMap: PluginIpcMappings = {} as PluginIpcMappings;
-try {
-    pluginIpcMap = sendSync<PluginIpcMappings>(IpcEvents.GET_PLUGIN_IPC_METHOD_MAP) ?? {} as PluginIpcMappings;
-} catch {
-    pluginIpcMap = {} as PluginIpcMappings;
-}
+const pluginIpcMap = sendSync<PluginIpcMappings>(IpcEvents.GET_PLUGIN_IPC_METHOD_MAP);
 
 for (const [plugin, methods] of Object.entries(pluginIpcMap)) {
     const map = PluginHelpers[plugin] = {};

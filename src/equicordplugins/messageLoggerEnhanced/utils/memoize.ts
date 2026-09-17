@@ -31,8 +31,6 @@ export function memoize<T extends (...args: any[]) => any>(func: T): MemoizedFun
         }
 
         const result = func(...args);
-        // Bound: message/blob keys are huge and distinct; evict oldest instead of growing forever.
-        if (cache.size >= 200) cache.delete(cache.keys().next().value!);
         cache.set(key, result);
         return result;
     };

@@ -28,23 +28,13 @@ function readSettings<T = object>(name: string, file: string): Partial<T> {
 
 export const RendererSettings = new SettingsStore(readSettings<Settings>("renderer", SETTINGS_FILE));
 
-function makeDebouncedWriter(file: string, getData: () => unknown, delay = 500) {
-    let timer: NodeJS.Timeout | undefined;
-    return () => {
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => {
-            timer = undefined;
-            try {
-                writeFileSync(file, JSON.stringify(getData()));
-            } catch (e) {
-                console.error(`Failed to write ${file} settings`, e);
-            }
-        }, delay);
-    };
-}
-
-const scheduleRendererWrite = makeDebouncedWriter(SETTINGS_FILE, () => RendererSettings.plain);
-RendererSettings.addGlobalChangeListener(scheduleRendererWrite);
+RendererSettings.addGlobalChangeListener(() => {
+    try {
+        writeFileSync(SETTINGS_FILE, JSON.stringify(RendererSettings.plain, null, 4));
+    } catch (e) {
+        console.error("Failed to write renderer settings", e);
+    }
+});
 
 ipcMain.handle(IpcEvents.GET_SETTINGS_DIR, () => SETTINGS_DIR);
 ipcMain.on(IpcEvents.GET_SETTINGS, e => e.returnValue = RendererSettings.plain);
@@ -72,5 +62,10 @@ mergeDefaults(nativeSettings, DefaultNativeSettings);
 
 export const NativeSettings = new SettingsStore(nativeSettings as NativeSettings);
 
-const scheduleNativeWrite = makeDebouncedWriter(NATIVE_SETTINGS_FILE, () => NativeSettings.plain);
-NativeSettings.addGlobalChangeListener(scheduleNativeWrite);
+NativeSettings.addGlobalChangeListener(() => {
+    try {
+        writeFileSync(NATIVE_SETTINGS_FILE, JSON.stringify(NativeSettings.plain, null, 4));
+    } catch (e) {
+        console.error("Failed to write native settings", e);
+    }
+});

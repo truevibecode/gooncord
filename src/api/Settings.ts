@@ -17,7 +17,6 @@
 */
 
 import { SettingsStore as SettingsStoreClass } from "@shared/SettingsStore";
-import { debounce } from "@shared/debounce";
 import { Logger } from "@utils/Logger";
 import { mergeDefaults } from "@utils/mergeDefaults";
 import { DefinedSettings, OptionType, SettingsChecks, SettingsDefinition } from "@utils/types";
@@ -194,12 +193,10 @@ export const SettingsStore = new SettingsStoreClass(settings, {
 });
 
 if (!IS_REPORTER) {
-    // Debounced: slider drags / rapid toggles used to IPC + serialize full settings per tick.
-    const scheduleSettingsSave = debounce((path?: string) => {
+    SettingsStore.addGlobalChangeListener((_, path) => {
         SettingsStore.plain.cloud.settingsSyncVersion = Date.now();
         VencordNative.settings.set(SettingsStore.plain, path);
-    }, 500);
-    SettingsStore.addGlobalChangeListener((_, path) => scheduleSettingsSave(path));
+    });
 }
 
 /**

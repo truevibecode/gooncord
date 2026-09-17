@@ -39,9 +39,6 @@ if (IS_VESKTOP || IS_EQUIBOP) require.main!.filename = join(dirname(injectorPath
 // @ts-expect-error Untyped method? Dies from cringe
 app.setAppPath(asarPath);
 
-// Hoisted: same path for every window, don't re-join per construction.
-const GOON_PRELOAD_PATH = join(__dirname, "preload.js");
-
 if (!IS_VANILLA) {
     const settings = RendererSettings.store;
 
@@ -59,10 +56,10 @@ if (!IS_VANILLA) {
         }
     }
 
-    // NOTE: persistAfterDiscordUpdates (global EventEmitter.emit proxy + sync
-    // sibling scan on quit) was removed. hostUpdateHook above covers updates;
-    // the emit proxy taxed every Electron event forever. Reinject manually if
-    // a legacy updater path ever skips the hook.
+    // Repatch after host updates on Windows and Linux
+    if (process.platform === "win32" || process.platform === "linux") {
+        require("./persistAfterDiscordUpdates");
+    }
 
     if (process.platform === "win32" && settings.winCtrlQ) {
         const originalBuild = Menu.buildFromTemplate;
@@ -94,7 +91,7 @@ if (!IS_VANILLA) {
 
             const original = options.webPreferences.preload;
             const isMainWindow = options.title === "Discord";
-            options.webPreferences.preload = GOON_PRELOAD_PATH;
+            options.webPreferences.preload = join(__dirname, "preload.js");
             options.webPreferences.sandbox = false;
             // work around discord unloading when in background
             options.webPreferences.backgroundThrottling = false;

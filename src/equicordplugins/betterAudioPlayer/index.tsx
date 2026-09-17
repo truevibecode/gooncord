@@ -118,9 +118,6 @@ function Visualizer({ playerRef, src }: { playerRef: React.RefObject<HTMLAudioEl
     const animFrameRef = React.useRef(0);
     const setupDoneRef = React.useRef(false);
     const blobUrlRef = React.useRef<string | null>(null);
-    // Cached by the ResizeObserver below; draw() reads this instead of
-    // forcing layout with getBoundingClientRect() every animation frame.
-    const canvasSizeRef = React.useRef({ width: 0, height: 0 });
 
     React.useEffect(() => {
         const audio = playerRef.current;
@@ -174,12 +171,10 @@ function Visualizer({ playerRef, src }: { playerRef: React.RefObject<HTMLAudioEl
             analyser.getByteTimeDomainData(dataArray);
             analyser.getByteFrequencyData(frequencyData);
 
-            const { width, height } = canvasSizeRef.current;
-            const oscilloscope = settings.store.oscilloscope;
-            const spectrograph = settings.store.spectrograph;
+            const { width, height } = canvas.getBoundingClientRect();
             canvasCtx.clearRect(0, 0, width, height);
-            if (oscilloscope) drawOscilloscope(canvasCtx, width, height, dataArray, dataArray.length);
-            if (spectrograph) drawSpectrograph(canvasCtx, width, height, frequencyData, frequencyData.length);
+            if (settings.store.oscilloscope) drawOscilloscope(canvasCtx, width, height, dataArray, dataArray.length);
+            if (settings.store.spectrograph) drawSpectrograph(canvasCtx, width, height, frequencyData, frequencyData.length);
         };
 
         const onPlay = () => {
@@ -223,7 +218,6 @@ function Visualizer({ playerRef, src }: { playerRef: React.RefObject<HTMLAudioEl
             const rect = canvas.getBoundingClientRect();
             canvas.width = rect.width * window.devicePixelRatio;
             canvas.height = rect.height * window.devicePixelRatio;
-            canvasSizeRef.current = { width: rect.width, height: rect.height };
             const ctx = canvas.getContext("2d");
             ctx?.scale(window.devicePixelRatio, window.devicePixelRatio);
         };

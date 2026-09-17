@@ -19,7 +19,6 @@ import { openViewScheduledModal } from "./components/ViewScheduledModal";
 import { FluxReactionEvent, ScheduledAttachment } from "./types";
 import {
     cleanupAllPhantomMessages,
-    getScheduledMessages,
     handleReactionAdd,
     handleReactionRemove,
     isPhantomMessage,
@@ -162,9 +161,7 @@ export default definePlugin({
 
     async start() {
         await loadScheduledMessages();
-        // Only poll when something is actually queued; adding the first
-        // message (re)starts the scheduler, draining parks it again.
-        if (getScheduledMessages().length > 0) startScheduler();
+        startScheduler();
         recreatePhantomMessages();
     },
 

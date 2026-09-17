@@ -18,7 +18,7 @@
 
 import { Logger } from "@utils/Logger";
 import { LazyComponent, LazyComponentWrapper } from "@utils/react";
-import { FilterFn, lazyWebpackSearchHistory, waitFor } from "@webpack";
+import { FilterFn, filters, lazyWebpackSearchHistory, waitFor } from "@webpack";
 import { ComponentType } from "react";
 
 const logger = new Logger("Webpack");
@@ -50,33 +50,5 @@ export function waitForComponent<T extends ComponentType<any> = ComponentType<an
 export function waitForStore(name: string, cb: (v: any) => void) {
     if (IS_REPORTER) lazyWebpackSearchHistory.push(["waitForStore", [name]]);
 
-    let set = pendingStoreCbs.get(name);
-    if (!set) pendingStoreCbs.set(name, set = new Set());
-    set.add(cb);
-    registerStoreDispatcher();
-}
-
-// Multiplexed dispatcher: ~70 waitForStore calls share ONE subscription
-// instead of testing every module against 70 displayName filters.
-// Re-registers itself while names remain (runFactoryWithWrap deletes a
-// subscription on first match, so one-shot registration can't multiplex).
-const pendingStoreCbs = new Map<string, Set<(v: any) => void>>();
-let storeDispatcherActive = false;
-function registerStoreDispatcher() {
-    if (storeDispatcherActive) return;
-    storeDispatcherActive = true;
-    waitFor((m: any) => {
-        if (m == null || (typeof m !== "object" && typeof m !== "function")) return false;
-        const dn = (m as any).constructor?.displayName;
-        return typeof dn === "string" && pendingStoreCbs.has(dn);
-    }, (store: any) => {
-        storeDispatcherActive = false;
-        const dn = store?.constructor?.displayName;
-        const cbs = typeof dn === "string" ? pendingStoreCbs.get(dn) : undefined;
-        if (dn) pendingStoreCbs.delete(dn);
-        if (cbs) for (const fn of cbs) {
-            try { fn(store); } catch (e) { logger.error("Error in waitForStore callback:\n", e); }
-        }
-        if (pendingStoreCbs.size > 0) registerStoreDispatcher();
-    }, { isIndirect: true });
+    waitFor(filters.byStoreName(name), cb, { isIndirect: true });
 }

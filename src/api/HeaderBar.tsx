@@ -241,23 +241,7 @@ function ChannelToolbarButtons() {
 
 /** @internal Injected by HeaderBarAPI patch (do NOT call directly) */
 export function _addHeaderBarButtons() {
-    return [
-        <div
-            key="custom-watermark"
-            style={{
-                display: "inline-flex",
-                alignItems: "center",
-                padding: "0 8px",
-                fontSize: "12px",
-                fontWeight: 600,
-                color: "var(--text-muted)",
-                userSelect: "none",
-                letterSpacing: "0.2px"
-            }}>
-            Gooncord v1.13 &lt;3
-        </div>,
-        <HeaderBarButtons key="vc-header-bar-buttons" />
-    ];
+    return [<HeaderBarButtons key="vc-header-bar-buttons" />];
 }
 
 /** @internal Injected by HeaderBarAPI patch (do NOT call directly) */

@@ -152,7 +152,7 @@ export function Updatable(props: CommonProps) {
                 </>
             ) : (
                 <Paragraph>
-                    You're running the latest version of Gooncord.
+                    You're running the latest version of Equicord.
                 </Paragraph>
             )}
         </>

@@ -923,8 +923,6 @@ function startRerenderInterval(entry: AutoCompleteEntry): void {
             return;
         }
 
-        // Idle-gated: quest list rerenders wait for a visible window.
-        if (document.hidden) return;
         rerenderQuests();
     }, 1000);
 }
@@ -1485,9 +1483,4 @@ export function resumeInterruptedAutoCompletes(): void {
 
 export function getActiveAutoCompletes(): readonly Readonly<AutoCompleteEntry>[] {
     return Array.from(activeAutoCompletes.values());
-}
-
-// Allocation-free check for render paths that only need a boolean.
-export function hasActiveAutoCompletes(): boolean {
-    return activeAutoCompletes.size > 0;
 }

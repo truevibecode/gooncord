@@ -39,11 +39,7 @@ export default definePlugin({
     async start() {
         await loadBadges();
         clearInterval(intervalId);
-        // Idle-gated: badges refetch waits for a visible window.
-        intervalId = setInterval(() => {
-            if (document.hidden) return;
-            loadBadges();
-        }, 1000 * 60 * 30);
+        intervalId = setInterval(loadBadges, 1000 * 60 * 30);
     },
     async stop() {
         clearInterval(intervalId);

@@ -28,6 +28,7 @@ import type { Emoji, Message, RenderModalProps, Sticker } from "@vencord/discord
 import { StickerFormatType } from "@vencord/discord-types/enums";
 import { findByCodeLazy, findByPropsLazy, proxyLazyWebpack } from "@webpack";
 import { ChannelStore, ConfirmModal, DraftType, EmojiStore, FluxDispatcher, GuildMemberStore, IconUtils, lodash, openModal, OverridePremiumTypeStore, Parser, PermissionsBits, PermissionStore, StickersStore, UploadHandler, UserSettingsActionCreators, UserSettingsProtoStore } from "@webpack/common";
+import { applyPalette, GIFEncoder, quantize } from "gifenc";
 import type { ReactElement, ReactNode } from "react";
 
 const BINARY_READ_OPTIONS = findByPropsLazy("readerFactory");
@@ -760,8 +761,6 @@ export default definePlugin({
             .then(res => res.arrayBuffer())
             .then(parseAPNG);
 
-        // Loaded on demand: gifenc only needed for APNG->GIF conversion.
-        const { applyPalette, GIFEncoder, quantize } = await import("gifenc");
         const gif = GIFEncoder();
         const resolution = settings.store.stickerSize ?? DEFAULT_STICKER_SIZE;
 

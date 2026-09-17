@@ -20,6 +20,7 @@ import { MessageAttachment } from "@vencord/discord-types";
 
 import { Flogger, settings } from "../..";
 import { LoggedAttachment, LoggedMessage, LoggedMessageJSON } from "../../types";
+import { memoize } from "../memoize";
 import { deleteImage, downloadAttachment, getImage, } from "./ImageManager";
 
 export function getFileExtension(str: string) {
@@ -95,46 +96,16 @@ export async function cacheMessageImages(message: LoggedMessage | LoggedMessageJ
 export async function deleteMessageImages(message: LoggedMessage | LoggedMessageJSON) {
     for (let i = 0; i < message.attachments.length; i++) {
         const attachment = message.attachments[i];
-        revokeAttachmentBlobUrl(attachment.id);
         await deleteImage(attachment.id);
     }
 }
 
-// Bounded URL cache with revoke: the old memoize() grew forever and never
-// revoked, pinning every logged image blob for the session.
-const attachmentUrls = new Map<string, string>();
-const attachmentInflight = new Map<string, Promise<string | null>>();
-export function revokeAttachmentBlobUrl(id: string) {
-    const url = attachmentUrls.get(id);
-    if (url) {
-        URL.revokeObjectURL(url);
-        attachmentUrls.delete(id);
-    }
-}
-export function getAttachmentBlobUrl(attachment: LoggedAttachment): Promise<string | null> {
-    const hit = attachmentUrls.get(attachment.id);
-    if (hit) return Promise.resolve(hit);
-    // Share one creation per id so parallel renders don't mint duplicate blobs.
-    let pending = attachmentInflight.get(attachment.id);
-    if (!pending) {
-        pending = (async () => {
-            const imageData = await getImage(attachment.id, attachment.fileExtension);
-            if (!imageData) return null;
-            const resUrl = URL.createObjectURL(new Blob([imageData]));
-            attachmentUrls.set(attachment.id, resUrl);
-            if (attachmentUrls.size > 100) {
-                const oldest = attachmentUrls.entries().next().value!;
-                // Don't revoke the one just created.
-                if (oldest[0] !== attachment.id) {
-                    URL.revokeObjectURL(oldest[1]);
-                    attachmentUrls.delete(oldest[0]);
-                }
-            }
-            return resUrl;
-        })().finally(() => {
-            attachmentInflight.delete(attachment.id);
-        });
-        attachmentInflight.set(attachment.id, pending);
-    }
-    return pending;
-}
+export const getAttachmentBlobUrl = memoize(async (attachment: LoggedAttachment) => {
+    const imageData = await getImage(attachment.id, attachment.fileExtension);
+    if (!imageData) return null;
+
+    const blob = new Blob([imageData]);
+    const resUrl = URL.createObjectURL(blob);
+
+    return resUrl;
+});

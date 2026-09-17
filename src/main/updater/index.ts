@@ -24,9 +24,7 @@ import gitRemote from "~git-remote";
 import { serializeErrors } from "./common";
 
 if (!IS_UPDATER_DISABLED) {
-    // Git path (spawns git + rebuilds via node) is dev-only. Releases use the
-    // http path: one ms-grade fetch instead of seconds of child processes.
-    require(IS_DEV ? "./git" : "./http");
+    require(IS_STANDALONE ? "./http" : "./git");
 } else {
     ipcMain.handle(IpcEvents.GET_REPO, serializeErrors(() => `https://github.com/${gitRemote}`));
     ipcMain.handle(IpcEvents.GET_UPDATES, serializeErrors(() => []));

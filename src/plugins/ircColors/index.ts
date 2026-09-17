@@ -21,23 +21,14 @@ import { getCustomColorString } from "@equicordplugins/customUserColors";
 import { hash as h64 } from "@intrnl/xxhash64";
 import { Devs } from "@utils/constants";
 import definePlugin, { OptionType } from "@utils/types";
-import { UserStore } from "@webpack/common";
+import { useMemo, UserStore } from "@webpack/common";
 
-// Memoized: hashing + template per message; lightness read without subscribing
-// (slider no longer fans out to every message; rows pick it up on next render).
-const ircColorMemo = new Map<string, string | null>();
 // Calculate a CSS color string based on the user ID
 function calculateNameColorForUser(id?: string) {
-    if (!id) return null;
-    const { lightness } = settings.store;
-    const key = id + ":" + lightness;
-    let v = ircColorMemo.get(key);
-    if (v === undefined) {
-        v = `hsl(${h64(id) % 360n}, 100%, ${lightness}%)`;
-        if (ircColorMemo.size >= 2000) ircColorMemo.clear();
-        ircColorMemo.set(key, v);
-    }
-    return v;
+    const { lightness } = settings.use(["lightness"]);
+    const idHash = useMemo(() => id ? h64(id) : null, [id]);
+
+    return idHash && `hsl(${idHash % 360n}, 100%, ${lightness}%)`;
 }
 
 const settings = definePluginSettings({

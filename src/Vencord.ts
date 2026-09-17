@@ -30,6 +30,7 @@ export * as WebpackPatcher from "./webpack/patchWebpack";
 export { PlainSettings, Settings };
 
 import { coreStyleRootNode, initStyles } from "@api/Styles";
+import { openSettingsTabModal, UpdaterTab } from "@components/settings";
 import { debounce } from "@shared/debounce";
 import { IS_WINDOWS } from "@utils/constants";
 import { createAndAppendStyle } from "@utils/css";
@@ -120,12 +121,6 @@ async function syncSettings() {
 
 let notifiedForUpdatesThisSession = false;
 
-// Loaded on demand: settings UI (68 files) only needed when user opens it.
-async function openUpdaterTab() {
-    const { openSettingsTabModal, UpdaterTab } = await import("@components/settings");
-    openSettingsTabModal(UpdaterTab!);
-}
-
 async function runUpdateCheck() {
     if (IS_UPDATER_DISABLED) return;
 
@@ -152,7 +147,7 @@ async function runUpdateCheck() {
                 notifiedForUpdatesThisSession = true;
 
                 showNotice(
-                    "Gooncord has been updated!",
+                    "Equicord has been updated!",
                     "Restart",
                     relaunch
                 );
@@ -164,9 +159,9 @@ async function runUpdateCheck() {
         notifiedForUpdatesThisSession = true;
 
         showNotice(
-            "A new version of Gooncord is available!",
+            "A new version of Equicord is available!",
             "View Update",
-            () => void openUpdaterTab()
+            () => openSettingsTabModal(UpdaterTab!)
         );
     } catch (err) {
         UpdateLogger.error("Failed to check for updates", err);
@@ -182,7 +177,7 @@ function initTrayIpc() {
             VencordNative.tray.setUpdateState(isOutdated);
 
             if (isOutdated) {
-                showNotice("A Gooncord update is available!", "View Update", () => void openUpdaterTab());
+                showNotice("An Equicord update is available!", "View Update", () => openSettingsTabModal(UpdaterTab!));
             } else {
                 showNotice("No updates available, you're on the latest version!", "OK", popNotice);
             }
@@ -197,7 +192,7 @@ function initTrayIpc() {
             await update();
             relaunch();
         } catch (err) {
-            UpdateLogger.error("Failed to repair Gooncord", err);
+            UpdateLogger.error("Failed to repair Equicord", err);
         }
     });
 
@@ -205,31 +200,18 @@ function initTrayIpc() {
 }
 
 async function init() {
-    // Restored sync gate (reverted idle-defer + gateway timeout: changing
-    // WebpackReady start timing correlated with a settings-render crash loop,
-    // React #311 conditional-hooks. Original upstream ordering is safest).
     await onceReady;
     startAllPlugins(StartAt.WebpackReady);
 
-    // Off critical path: cloud IDB + network + tray IPC don't block chat render.
-    const idle = (fn: () => void) => (window as any).requestIdleCallback?.(fn, { timeout: 15000 }) ?? setTimeout(fn, 3000);
-    idle(() => {
-        syncSettings();
-        initTrayIpc();
-    });
+    syncSettings();
+    initTrayIpc();
 
     if (!IS_DEV && !IS_WEB && !IS_UPDATER_DISABLED) {
-        // Defer first update check to idle so it doesn't contend with Discord startup fetches
-        const defer = (fn: () => void) => (window as any).requestIdleCallback?.(fn, { timeout: 15000 }) ?? setTimeout(fn, 15000);
-        defer(runUpdateCheck);
+        runUpdateCheck();
 
         // this tends to get really annoying, so only do this if the user has auto-update without notification enabled
         if (Settings.autoUpdate && !Settings.autoUpdateNotification) {
-            setInterval(() => {
-                // Idle-gated: no wakeups for a hidden window.
-                if (document.hidden) return;
-                runUpdateCheck();
-            }, 1000 * 60 * 30); // 30 minutes
+            setInterval(runUpdateCheck, 1000 * 60 * 30); // 30 minutes
         }
     }
 
@@ -245,17 +227,11 @@ async function init() {
                 "\n\n" + pendingPatches.map(p => `${p.plugin}: ${p.find}`).join("\n")
             );
     }
-    // Startup notice
-    console.log("%c[Gooncord v1.13]%c Ultra-performance build active (%s)", "color: #7289da; font-weight: bold; font-size: 14px;", "color: #43b581; font-weight: bold;", new Date().toLocaleTimeString());
 }
 
 initPluginManager();
 initStyles();
-try {
-    startAllPlugins(StartAt.Init);
-} catch (err) {
-    console.error("[Gooncord] startAllPlugins(Init) threw, continuing to init():", err);
-}
+startAllPlugins(StartAt.Init);
 init();
 
 document.addEventListener("DOMContentLoaded", () => {

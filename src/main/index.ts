@@ -30,10 +30,8 @@ import { installExt } from "./utils/extensions";
 
 if (!IS_VANILLA && !IS_EXTENSION) {
     app.whenReady().then(() => {
-        // Single factory for the vencord:// + equicord:// schemes (theme alias
-        // kept for back-compat; *.js.map routes 404 in prod, maps are CI-only).
-        const serveGoonScheme = (scheme: string) => async ({ url: unsafeUrl }: { url: string; }) => {
-            let url = decodeURI(unsafeUrl).slice(`${scheme}://`.length).replace(/\?v=\d+$/, "");
+        protocol.handle("vencord", ({ url: unsafeUrl }) => {
+            let url = decodeURI(unsafeUrl).slice("vencord://".length).replace(/\?v=\d+$/, "");
 
             if (url.endsWith("/")) url = url.slice(0, -1);
 
@@ -54,36 +52,51 @@ if (!IS_VANILLA && !IS_EXTENSION) {
             // from a string I don't think any other form of sourcemaps would work
 
             switch (url) {
-                // Served as a real file (not eval) so Chromium can use V8 code
-                // caching across restarts. See preload renderer handoff.
-                case "renderer.js":
-                    try {
-                        return await net.fetch(pathToFileURL(join(__dirname, url)).toString());
-                    } catch {
-                        return new Response(null, {
-                            status: 404
-                        });
-                    }
                 case "renderer.js.map":
                 case "preload.js.map":
                 case "patcher.js.map":
                 case "main.js.map":
-                    try {
-                        return await net.fetch(pathToFileURL(join(__dirname, url)).toString());
-                    } catch {
-                        return new Response(null, {
-                            status: 404
-                        });
-                    }
+                    return net.fetch(pathToFileURL(join(__dirname, url)).toString());
                 default:
                     return new Response(null, {
                         status: 404
                     });
             }
-        };
+        });
 
-        protocol.handle("vencord", serveGoonScheme("vencord"));
-        protocol.handle("equicord", serveGoonScheme("equicord"));
+        protocol.handle("equicord", ({ url: unsafeUrl }) => {
+            let url = decodeURI(unsafeUrl).slice("equicord://".length).replace(/\?v=\d+$/, "");
+
+            if (url.endsWith("/")) url = url.slice(0, -1);
+
+            if (url.startsWith("/themes/")) {
+                const theme = url.slice("/themes/".length);
+
+                const safeUrl = ensureSafePath(THEMES_DIR, theme);
+                if (!safeUrl) {
+                    return new Response(null, {
+                        status: 404
+                    });
+                }
+
+                return net.fetch(pathToFileURL(safeUrl).toString());
+            }
+
+            // Source Maps! Maybe there's a better way but since the renderer is executed
+            // from a string I don't think any other form of sourcemaps would work
+
+            switch (url) {
+                case "renderer.js.map":
+                case "preload.js.map":
+                case "patcher.js.map":
+                case "main.js.map":
+                    return net.fetch(pathToFileURL(join(__dirname, url)).toString());
+                default:
+                    return new Response(null, {
+                        status: 404
+                    });
+            }
+        });
 
         try {
             if (RendererSettings.store.enableReactDevtools)

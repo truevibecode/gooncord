@@ -19,31 +19,27 @@
 import { Button } from "@components/Button";
 import { Heart } from "@components/Heart";
 import { OpenExternalIcon } from "@components/Icons";
-import { copyToClipboard } from "@utils/clipboard";
 import { openInviteModal } from "@utils/discord";
 import { ButtonProps } from "@vencord/discord-types";
-import { showToast, Toasts } from "@webpack/common";
+import { showToast } from "@webpack/common";
 
 export function DonateButton({
     equicord = false,
     className,
     ...props
 }: Partial<ButtonProps> & { equicord?: boolean; }) {
-    const ltcAddress = "LfzwNzPUoopm4AR36rNps2JzAUuoJ9Vf4C";
+    const link = equicord ? "https://github.com/sponsors/thororen1234" : "https://github.com/sponsors/Vendicated";
     return (
         <Button
             {...props}
             variant="none"
             size="medium"
             type="button"
-            onClick={async () => {
-                await copyToClipboard(ltcAddress);
-                showToast("Address copied!", Toasts.Type.SUCCESS);
-            }}
+            onClick={() => VencordNative.native.openExternal(link)}
             className={className || "vc-donate-button"}
         >
             <Heart />
-            Donate (LTC)
+            Donate
         </Button>
     );
 }
@@ -58,10 +54,15 @@ export function InviteButton({
             variant="none"
             size="medium"
             type="button"
-            onClick={() => VencordNative.native.openExternal("https://github.com/truevibecode/gooncord")}
+            onClick={async e => {
+                e.preventDefault();
+                openInviteModal("wKgT9j2xfN").catch(() =>
+                    showToast("Invalid or expired invite"),
+                );
+            }}
             className={className || "vc-donate-button"}
         >
-            GitHub
+            Invite
             <OpenExternalIcon className="vc-invite-link" />
         </Button>
     );

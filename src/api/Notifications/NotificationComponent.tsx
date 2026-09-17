@@ -67,7 +67,7 @@ export default ErrorBoundary.wrap(function NotificationComponent({
             } else {
                 setElapsed(elapsedNow);
             }
-        }, 100);
+        }, 10);
 
         return () => clearInterval(intervalId);
     }, [timeout, isHover, permanent]);

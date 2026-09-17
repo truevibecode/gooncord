@@ -7,7 +7,7 @@
 import "./style.css";
 
 import { definePluginSettings } from "@api/Settings";
-import type { FFmpeg } from "@ffmpeg/ffmpeg";
+import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { Devs, EquicordDevs } from "@utils/constants";
 import definePlugin, { OptionType } from "@utils/types";
 import { Channel } from "@vencord/discord-types";
@@ -123,8 +123,7 @@ export default definePlugin({
         const [selectedStickerPackId, setSelectedStickerPackId] = React.useState<string | null>(null);
 
         const ffmpegLoaded = React.useState(false);
-        // Lazily constructed on mount (was `new FFmpeg()` during render).
-        const [ffmpeg, setFFmpeg] = React.useState<FFmpeg | null>(null);
+        const ffmpeg = React.useState<FFmpeg>(new FFmpeg());
 
         const getMetasSignature = (m: StickerPackMeta[]) => m.map(x => x.id).sort().join(",");
 
@@ -153,17 +152,9 @@ export default definePlugin({
         React.useEffect(() => {
             if (ffmpegLoaded[0]) return;
 
-            let cancelled = false;
-            (async () => {
-                const { FFmpeg: FF } = await import("@ffmpeg/ffmpeg");
-                if (cancelled) return;
-                const instance = new FF();
-                setFFmpeg(instance);
-                loadFFmpeg(instance, () => {
-                    if (!cancelled) ffmpegLoaded[1](true);
-                });
-            })();
-            return () => { cancelled = true; };
+            loadFFmpeg(ffmpeg[0], () => {
+                ffmpegLoaded[1](true);
+            });
         }, []);
 
         return (
@@ -174,7 +165,7 @@ export default definePlugin({
 
                 <PickerHeader onQueryChange={setQuery} />
                 <FFmpegStateContext.Provider value={{
-                    ffmpeg: ffmpeg ?? undefined,
+                    ffmpeg: ffmpeg[0],
                     isLoaded: ffmpegLoaded[0]
                 }}>
                     <PickerContent

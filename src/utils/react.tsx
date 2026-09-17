@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-import { React, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "@webpack/common";
+import { React, useEffect, useMemo, useReducer, useState } from "@webpack/common";
 import type { ActionDispatch, ReactNode } from "react";
 
 import { checkIntersecting } from "./misc";
@@ -44,10 +44,8 @@ export const useIntersection = (intersectOnly = false): [
 ] => {
     const observerRef = React.useRef<IntersectionObserver | null>(null);
     const [isIntersecting, setIntersecting] = useState(false);
-    const intersectOnlyRef = useRef(intersectOnly);
-    intersectOnlyRef.current = intersectOnly;
 
-    const refCallback = useCallback((element: Element | null) => {
+    const refCallback = (element: Element | null) => {
         observerRef.current?.disconnect();
         observerRef.current = null;
 
@@ -55,13 +53,13 @@ export const useIntersection = (intersectOnly = false): [
 
         if (checkIntersecting(element)) {
             setIntersecting(true);
-            if (intersectOnlyRef.current) return;
+            if (intersectOnly) return;
         }
 
         observerRef.current = new IntersectionObserver(entries => {
             for (const entry of entries) {
                 if (entry.target !== element) continue;
-                if (entry.isIntersecting && intersectOnlyRef.current) {
+                if (entry.isIntersecting && intersectOnly) {
                     setIntersecting(true);
                     observerRef.current?.disconnect();
                     observerRef.current = null;
@@ -71,7 +69,7 @@ export const useIntersection = (intersectOnly = false): [
             }
         });
         observerRef.current.observe(element);
-    }, []);
+    };
 
     return [refCallback, isIntersecting];
 };
@@ -102,21 +100,19 @@ export function useAwaiter<T>(factory: () => Promise<T>, providedOpts?: AwaiterO
         error: null,
         pending: true
     });
-    const generation = useRef(0);
 
     useEffect(() => {
-        const id = ++generation.current;
         let isAlive = true;
-        setState(s => s.pending ? s : { ...s, pending: true });
+        if (!state.pending) setState({ ...state, pending: true });
 
         factory()
             .then(value => {
-                if (!isAlive || id !== generation.current) return;
+                if (!isAlive) return;
                 setState({ value, error: null, pending: false });
                 opts.onSuccess?.(value);
             })
             .catch(error => {
-                if (!isAlive || id !== generation.current) return;
+                if (!isAlive) return;
                 setState({ value: opts.fallbackValue, error, pending: false });
                 opts.onError?.(error);
             });
@@ -171,7 +167,7 @@ export function useFixedTimer({ interval = 1000, initialTime = Date.now() }: Fix
         return () => {
             clearInterval(intervalId);
         };
-    }, [initialTime, interval]);
+    }, [initialTime]);
 
     return time;
 }

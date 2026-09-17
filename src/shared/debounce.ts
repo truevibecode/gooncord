@@ -23,12 +23,10 @@
  * @param func The function to wrap
  * @param delay The delay in milliseconds
  */
-export function debounce<T extends Function>(func: T, delay = 300): T & { cancel(): void; } {
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    function debounced(this: unknown, ...args: any[]) {
+export function debounce<T extends Function>(func: T, delay = 300): T {
+    let timeout: NodeJS.Timeout;
+    return function (...args: any[]) {
         clearTimeout(timeout);
-        timeout = setTimeout(() => func.apply(this, args), delay);
-    }
-    debounced.cancel = () => clearTimeout(timeout);
-    return debounced as any;
+        timeout = setTimeout(() => { func(...args); }, delay);
+    } as any;
 }

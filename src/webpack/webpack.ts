@@ -29,9 +29,6 @@ import type { AnyModuleFactory, AnyWebpackRequire } from "./types";
 
 const logger = new Logger("Webpack");
 
-// Cache Function -> source string to avoid repeated toString() in byCode filters
-const fnSourceCache = new WeakMap<Function, string>();
-
 export let _resolveReady: () => void;
 /**
  * Fired once a gateway connection to Discord has been established.
@@ -71,12 +68,7 @@ export const filters = {
         const parsedCode = code.map(canonicalizeMatch);
         const filter = m => {
             if (typeof m !== "function") return false;
-            let str: string | undefined = fnSourceCache.get(m);
-            if (str === undefined) {
-                str = Function.prototype.toString.call(m);
-                fnSourceCache.set(m, str);
-            }
-            return stringMatches(str, parsedCode);
+            return stringMatches(Function.prototype.toString.call(m), parsedCode);
         };
 
         filter.$$vencordProps = [...code];
@@ -367,29 +359,14 @@ export const findBulk = traceFunction("findBulk", function findBulk(...filterFns
  * Find the id of the first module factory that includes all the given code
  * @returns string or null
  */
-const findModuleIdCache = new Map<string, string | null>();
-function evictModuleIdCache() {
-    let n = 0;
-    for (const k of findModuleIdCache.keys()) {
-        findModuleIdCache.delete(k);
-        if (++n >= 100) break;
-    }
-}
 export const findModuleId = traceFunction("findModuleId", function findModuleId(...code: CodeFilter) {
-    const cacheKey = code.map(c => String(c)).join("\n");
-    if (findModuleIdCache.has(cacheKey)) return findModuleIdCache.get(cacheKey)!;
-
-    const canonicalized = code.map(canonicalizeMatch);
+    code = code.map(canonicalizeMatch);
 
     for (const id in wreq.m) {
-        if (stringMatches(wreq.m[id].toString(), canonicalized)) {
-            if (findModuleIdCache.size > 500) evictModuleIdCache();
-            findModuleIdCache.set(cacheKey, id);
-            return id;
-        }
+        if (stringMatches(wreq.m[id].toString(), code)) return id;
     }
 
-    const err = new Error("Didn't find module with code(s):\n" + canonicalized.join("\n"));
+    const err = new Error("Didn't find module with code(s):\n" + code.join("\n"));
     if (IS_DEV) {
         if (!devToolsOpen)
             // Strict behaviour in DevBuilds to fail early and make sure the issue is found
@@ -398,8 +375,6 @@ export const findModuleId = traceFunction("findModuleId", function findModuleId(
         logger.warn(err);
     }
 
-    if (findModuleIdCache.size > 500) evictModuleIdCache();
-    findModuleIdCache.set(cacheKey, null);
     return null;
 });
 
@@ -497,11 +472,7 @@ export function findByCodeLazy(...code: CodeFilter) {
     return proxyLazy(() => findByCode(...code));
 }
 
-let fluxMapPopulated = false;
-const missingStores = new Set<string>();
 function populateFluxStoreMap() {
-    if (fluxMapPopulated) return;
-    fluxMapPopulated = true;
     const { Flux } = require("./common") as typeof import("./common");
 
     Flux.Store.getAll?.().forEach(store =>
@@ -529,24 +500,20 @@ function populateFluxStoreMap() {
  * Find a store by its displayName
  */
 export function findStore(name: StoreNameFilter) {
-    const hit = fluxStores.get(name);
-    if (hit) return hit;
-    if (!missingStores.has(name)) {
+    if (!fluxStores.has(name)) {
         populateFluxStoreMap();
-        const hit2 = fluxStores.get(name);
-        if (hit2) return hit2;
+    }
+
+    if (fluxStores.has(name)) {
+        return fluxStores.get(name);
     }
 
     const res = find(filters.byStoreName(name), { isIndirect: true });
     if (res) {
         fluxStores.set(name, res);
-        missingStores.delete(name);
         return res;
     }
 
-    // Bound: typo'd store names would otherwise pin forever.
-    if (missingStores.size > 200) missingStores.clear();
-    missingStores.add(name);
     handleModuleNotFound("findStore", name);
     return null;
 }
@@ -799,6 +766,7 @@ export function extractAndLoadChunksLazy(code: CodeFilter, matcher = DefaultExtr
 
     return makeLazy(() => extractAndLoadChunks(code, matcher));
 }
+
 /**
  * Wait for a module that matches the provided filter to be registered,
  * then call the callback with the module as the first argument

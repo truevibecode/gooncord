@@ -51,25 +51,6 @@ const MessageClasses = findCssClassesLazy("edited", "communicationDisabled", "is
 // track messages where the user disabled diffs for this session
 const disabledDiffMessages = new Set<string>();
 
-// Parsed ignore lists: comma strings re-split on every message before.
-// Exact-id Sets, rebuilt only when the source strings change.
-let ignoreSetsKey = "";
-let ignoreUsersSet = new Set<string>();
-let ignoreChannelsSet = new Set<string>();
-let ignoreGuildsSet = new Set<string>();
-function getIgnoreSets() {
-    const { ignoreUsers, ignoreChannels, ignoreGuilds } = settings.store;
-    const key = ignoreUsers + "\n" + ignoreChannels + "\n" + ignoreGuilds;
-    if (key !== ignoreSetsKey) {
-        const split = (s: string) => new Set(s.split(",").map(x => x.trim()).filter(Boolean));
-        ignoreUsersSet = split(ignoreUsers);
-        ignoreChannelsSet = split(ignoreChannels);
-        ignoreGuildsSet = split(ignoreGuilds);
-        ignoreSetsKey = key;
-    }
-    return { users: ignoreUsersSet, channels: ignoreChannelsSet, guilds: ignoreGuildsSet };
-}
-
 function scheduleMicrotask(fn: () => void) {
     if (typeof queueMicrotask === "function") queueMicrotask(fn);
     else setTimeout(fn, 0);
@@ -659,25 +640,28 @@ export default definePlugin({
                 ignoreBots,
                 ignoreSelf,
                 ignoreSelfEdits,
+                ignoreUsers,
+                ignoreChannels,
+                ignoreGuilds,
                 logEdits,
                 logDeletes,
             } = settings.store;
             const myId = UserStore.getCurrentUser().id;
-            const channel = ChannelStore.getChannel(message.channel_id);
-            const { users: ignoreUsersSet, channels: ignoreChannelsSet, guilds: ignoreGuildsSet } = getIgnoreSets();
 
             return (
                 (ignoreBots && message.author?.bot) ||
                 (ignoreSelf && message.author?.id === myId) ||
                 (ignoreSelfEdits && isEdit && message.author?.id === myId) ||
-                ignoreUsersSet.has(message.author?.id) ||
-                ignoreChannelsSet.has(message.channel_id) ||
-                ignoreChannelsSet.has(channel?.parent_id) ||
+                ignoreUsers.includes(message.author?.id) ||
+                ignoreChannels.includes(message.channel_id) ||
+                ignoreChannels.includes(
+                    ChannelStore.getChannel(message.channel_id)?.parent_id,
+                ) ||
                 (isEdit ? !logEdits : !logDeletes) ||
-                ignoreGuildsSet.has(channel?.guild_id) ||
+                ignoreGuilds.includes(ChannelStore.getChannel(message.channel_id)?.guild_id) ||
                 // Ignore Venbot in the support channels (love you venbot!!!)
-                (message.author?.id === VENBOT_USER_ID && channel?.parent_id === VC_SUPPORT_CATEGORY_ID) ||
-                (message.author?.id === EQUIBOT_USER_ID && channel?.id === SUPPORT_CHANNEL_ID));
+                (message.author?.id === VENBOT_USER_ID && ChannelStore.getChannel(message.channel_id)?.parent_id === VC_SUPPORT_CATEGORY_ID) ||
+                (message.author?.id === EQUIBOT_USER_ID && ChannelStore.getChannel(message.channel_id)?.id === SUPPORT_CHANNEL_ID));
         } catch (e) {
             return false;
         }

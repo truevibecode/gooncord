@@ -23,6 +23,7 @@ import { Devs, EquicordDevs, GUILD_IDS } from "@utils/constants";
 import { sendMessage } from "@utils/discord";
 import definePlugin from "@utils/types";
 import { DraftType, UploadHandler, UploadManager, UserAffinitiesStore, UserStore } from "@webpack/common";
+import { applyPalette, GIFEncoder, quantize } from "gifenc";
 
 import {
     calculateAffinityScore,
@@ -639,8 +640,6 @@ export default definePlugin({
                         gifHeight = avatar.height;
                     }
 
-                    // Loaded on demand: gifenc only needed when running this command.
-                    const { applyPalette, GIFEncoder, quantize } = await import("gifenc");
                     const gif = GIFEncoder();
                     const canvas = document.createElement("canvas");
                     canvas.width = gifWidth;

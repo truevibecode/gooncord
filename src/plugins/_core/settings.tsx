@@ -192,8 +192,8 @@ export default definePlugin({
         const equicordEntries: SettingsLayoutNode[] = [
             buildEntry({
                 key: "equicord_main",
-                title: "Gooncord",
-                panelTitle: "Gooncord Settings",
+                title: "Equicord",
+                panelTitle: "Equicord Settings",
                 Component: VencordTab,
                 Icon: MainSettingsIcon
             }),
@@ -212,7 +212,7 @@ export default definePlugin({
             !IS_UPDATER_DISABLED && UpdaterTab && buildEntry({
                 key: "equicord_updater",
                 title: "Updater",
-                panelTitle: "Gooncord Updater",
+                panelTitle: "Equicord Updater",
                 Component: UpdaterTab,
                 Icon: UpdaterIcon
             }),
@@ -225,7 +225,7 @@ export default definePlugin({
             buildEntry({
                 key: "equicord_cloud",
                 title: "Cloud",
-                panelTitle: "Gooncord Cloud",
+                panelTitle: "Equicord Cloud",
                 Component: CloudTab,
                 Icon: CloudIcon
             }),
@@ -247,7 +247,7 @@ export default definePlugin({
         const equicordSection: SettingsLayoutNode = {
             key: "equicord_section",
             type: LayoutTypes.SECTION,
-            useTitle: () => "Gooncord Settings",
+            useTitle: () => "Equicord Settings",
             buildLayout: () => equicordEntries
         };
 

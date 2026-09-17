@@ -23,14 +23,13 @@ import "./settings";
 import { debounce } from "@shared/debounce";
 import { IpcEvents } from "@shared/IpcEvents";
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell, systemPreferences } from "electron";
-import { readFile as readFileAsync } from "fs/promises";
-import { FSWatcher, mkdirSync, readFileSync, watch } from "fs";
-import { open, readdir, readFile, unlink, writeFile } from "fs/promises";
+import monacoHtml from "file://monacoWin.html?minify&base64";
+import { FSWatcher, mkdirSync, readFileSync, watch, writeFileSync } from "fs";
+import { open, readdir, readFile, unlink } from "fs/promises";
 import { release } from "os";
 import { join } from "path";
 
 import { registerCspIpcHandlers } from "./csp/manager";
-import { RendererSettings } from "./settings";
 import { getThemeInfo, stripBOM, UserThemeHeader } from "./themes";
 import { ALLOWED_PROTOCOLS, QUICK_CSS_PATH, SETTINGS_DIR, THEMES_DIR } from "./utils/constants";
 import { ensureSafePath } from "./utils/ensureSafePath";
@@ -86,8 +85,8 @@ ipcMain.handle(IpcEvents.OPEN_EXTERNAL, (_, url) => {
 });
 
 ipcMain.handle(IpcEvents.GET_QUICK_CSS, () => readCss());
-ipcMain.handle(IpcEvents.SET_QUICK_CSS, (_, css: string) =>
-    writeFile(QUICK_CSS_PATH, css)
+ipcMain.handle(IpcEvents.SET_QUICK_CSS, (_, css) =>
+    writeFileSync(QUICK_CSS_PATH, css)
 );
 
 ipcMain.handle(IpcEvents.GET_THEMES_LIST, () => listThemes());
@@ -113,55 +112,37 @@ ipcMain.handle(IpcEvents.OPEN_THEMES_FOLDER, () => shell.openPath(THEMES_DIR));
 ipcMain.handle(IpcEvents.OPEN_SETTINGS_FOLDER, () => shell.openPath(SETTINGS_DIR));
 
 let fsWatchers = [] as FSWatcher[];
-let fileWatchersGeneration = 0;
 
 ipcMain.handle(IpcEvents.INIT_FILE_WATCHERS, ({ sender }) => {
-    const generation = ++fileWatchersGeneration;
-    for (const w of fsWatchers) { try { w.close(); } catch { } }
-    fsWatchers = [];
+    fsWatchers.forEach(w => w.close());
 
-    // Fixed: previously reassigned below, leaking a quickCssWatcher created
-    // after the reassignment. Now every watcher is tracked in `local` and
-    // only promoted while its generation is still current.
-    const local: FSWatcher[] = [];
-    const track = (w: FSWatcher | undefined) => {
-        if (!w || sender.isDestroyed() || generation !== fileWatchersGeneration) {
-            try { w?.close(); } catch { }
-            return;
-        }
-        local.push(w);
-        fsWatchers.push(w);
-    };
+    let quickCssWatcher: FSWatcher | undefined;
+    let rendererCssWatcher: FSWatcher | undefined;
 
-    // QuickCSS touch + watch only when the feature is on. Saves an FD,
-    // a disk touch and IPC spam for everyone not using QuickCSS.
-    if (RendererSettings.store.useQuickCss) {
-        open(QUICK_CSS_PATH, "a+").then(fd => {
-            fd.close().catch(() => { });
-            if (generation !== fileWatchersGeneration || sender.isDestroyed()) return;
-            track(watch(QUICK_CSS_PATH, { persistent: false }, debounce(async () => {
-                if (!sender.isDestroyed())
-                    sender.postMessage(IpcEvents.QUICK_CSS_UPDATE, await readCss());
-            }, 50)));
-        }).catch(() => { });
-    }
+    open(QUICK_CSS_PATH, "a+").then(fd => {
+        fd.close();
+        quickCssWatcher = watch(QUICK_CSS_PATH, { persistent: false }, debounce(async () => {
+            sender.postMessage(IpcEvents.QUICK_CSS_UPDATE, await readCss());
+        }, 50));
+    }).catch(() => { });
 
-    track(watch(THEMES_DIR, { persistent: false }, debounce(() => {
-        if (!sender.isDestroyed())
-            sender.postMessage(IpcEvents.THEME_UPDATE, void 0);
-    })));
+    const themesWatcher = watch(THEMES_DIR, { persistent: false }, debounce(() => {
+        sender.postMessage(IpcEvents.THEME_UPDATE, void 0);
+    }));
 
     if (IS_DEV) {
-        track(watch(RENDERER_CSS_PATH, { persistent: false }, async () => {
-            if (!sender.isDestroyed())
-                sender.postMessage(IpcEvents.RENDERER_CSS_UPDATE, await readFile(RENDERER_CSS_PATH, "utf-8"));
-        }));
+        rendererCssWatcher = watch(RENDERER_CSS_PATH, { persistent: false }, async () => {
+            sender.postMessage(IpcEvents.RENDERER_CSS_UPDATE, await readFile(RENDERER_CSS_PATH, "utf-8"));
+        });
     }
 
+    fsWatchers = [quickCssWatcher, themesWatcher, rendererCssWatcher].filter(Boolean) as FSWatcher[];
+
     sender.once("destroyed", () => {
-        for (const w of local) { try { w.close(); } catch { } }
-        if (generation === fileWatchersGeneration)
-            fsWatchers = [];
+        quickCssWatcher?.close();
+        themesWatcher.close();
+        rendererCssWatcher?.close();
+        fsWatchers = [];
     });
 });
 
@@ -195,48 +176,32 @@ ipcMain.handle(IpcEvents.OPEN_MONACO_EDITOR, async () => {
 
     makeLinksOpenExternally(monacoWin);
 
-    // Loaded on demand: 100sKB base64 html only needed when editor opens.
-    const { default: monacoHtml } = await import("file://monacoWin.html?minify&base64");
     await monacoWin.loadURL(`data:text/html;base64,${monacoHtml}`);
 });
 
-app.on("before-quit", event => {
+app.on("before-quit", async event => {
     if (monacoWin && !monacoWin.isDestroyed() && !monacoWin.isVisible()) {
-        event.preventDefault();
-        void dialog.showMessageBox({
+        const result = await dialog.showMessageBox({
             type: "question",
             buttons: ["Cancel", "Close Anyway"],
             defaultId: 0,
             title: "QuickCSS Editor Open",
             message: "QuickCSS editor is still open in the background.",
             detail: "Do you want to close Discord anyway? This will also close the QuickCSS editor."
-        }).then(result => {
-            if (result.response === 1) {
-                monacoWin?.destroy();
-                app.exit();
-            }
         });
+
+        if (result.response === 1) {
+            app.exit();
+        }
     }
 });
 
 ipcMain.handle(IpcEvents.GET_RENDERER_CSS, () => readFile(RENDERER_CSS_PATH, "utf-8"));
 
 if (IS_DISCORD_DESKTOP) {
-    let cachedRendererJs: string | undefined;
-    // Pre-warm async so first window doesn't pay sync read.
-    readFileAsync(join(__dirname, "renderer.js"), "utf-8").then(s => cachedRendererJs = s).catch(() => { });
-    const serveRendererJs = () => {
-        if (cachedRendererJs === undefined) {
-            try { cachedRendererJs = readFileSync(join(__dirname, "renderer.js"), "utf-8"); } catch { cachedRendererJs = ""; }
-        }
-        return cachedRendererJs;
-    };
-    // Legacy sync path (kept for compat).
     ipcMain.on(IpcEvents.PRELOAD_GET_RENDERER_JS, e => {
-        e.returnValue = serveRendererJs();
+        e.returnValue = readFileSync(join(__dirname, "renderer.js"), "utf-8");
     });
-    // Preferred async path: no 3.4MB sync copy stalling main / the UI thread.
-    ipcMain.handle(IpcEvents.PRELOAD_GET_RENDERER_JS, async () => serveRendererJs());
 }
 
 ipcMain.on(IpcEvents.SUPPORTS_WINDOWS_MATERIAL, e => {

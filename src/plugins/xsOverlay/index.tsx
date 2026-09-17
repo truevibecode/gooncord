@@ -14,10 +14,6 @@ import { Button, ChannelStore, GuildRoleStore, GuildStore, UserStore } from "@we
 
 const ChannelTypes = findLazy(m => m.ANNOUNCEMENT_THREAD === 10);
 
-// Precompiled: were rebuilt per notification (+ per match) on this hot path.
-const EMOTE_RE = /<a?:\w+:\d+>/g;
-const CHANNEL_MENTION_RE = /<#\d+>/g;
-
 interface Message {
     guild_id: string,
     attachments: MessageAttachment[],
@@ -279,15 +275,24 @@ export default definePlugin({
                 }
             }
 
-            // make emotes and channel mentions readable (single pass each)
-            finalMsg = finalMsg.replace(EMOTE_RE, m => `:${m.split(":")[1]}:`);
+            // make emotes and channel mentions readable
+            const emoteMatches = finalMsg.match(new RegExp("(<a?:\\w+:\\d+>)", "g"));
+            const channelMatches = finalMsg.match(new RegExp("<(#\\d+)>", "g"));
 
-            // color channel mentions (null-guarded: original threw on missing channel)
-            finalMsg = finalMsg.replace(CHANNEL_MENTION_RE, m => {
-                const channelId = m.slice(2, -1);
-                const name = ChannelStore.getChannel(channelId)?.name ?? "unknown-channel";
-                return `<b><color=#${channelPingColor}>#${name}</color></b>`;
-            });
+            if (emoteMatches) {
+                for (const eMatch of emoteMatches) {
+                    finalMsg = finalMsg.replace(new RegExp(`${eMatch}`, "g"), `:${eMatch.split(":")[1]}:`);
+                }
+            }
+
+            // color channel mentions
+            if (channelMatches) {
+                for (const cMatch of channelMatches) {
+                    let channelId = cMatch.split("<#")[1];
+                    channelId = channelId.substring(0, channelId.length - 1);
+                    finalMsg = finalMsg.replace(new RegExp(`${cMatch}`, "g"), `<b><color=#${channelPingColor}>#${ChannelStore.getChannel(channelId).name}</color></b>`);
+                }
+            }
 
             if (shouldIgnoreForChannelType(channel)) return;
             sendMsgNotif(titleString, finalMsg, message);

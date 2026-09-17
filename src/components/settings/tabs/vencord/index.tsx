@@ -28,15 +28,13 @@ import { isAnyPluginDev } from "@utils/misc";
 import { relaunch } from "@utils/native";
 import { Alerts, GuildMemberStore, React, useMemo, UserStore } from "@webpack/common";
 
-import { GOONCORD_ICON_B64 } from "@components/GooncordIcon";
-
 import { DonateButtonComponent } from "./DonateButton";
 import { MacOSVibrancySettings } from "./MacVibrancySettings";
 import { NotificationSection } from "./NotificationSettings";
 import { WindowsMaterialSettings } from "./WindowsMaterialSettings";
 
-const DEFAULT_DONATE_IMAGE = GOONCORD_ICON_B64;
-const SHIGGY_DONATE_IMAGE = GOONCORD_ICON_B64;
+const DEFAULT_DONATE_IMAGE = "https://cdn.discordapp.com/emojis/1026533090627174460.png";
+const SHIGGY_DONATE_IMAGE = "https://equicord.org/assets/favicon.png";
 
 const VENNIE_DONATOR_IMAGE = "https://cdn.discordapp.com/emojis/1238120638020063377.png";
 const COZY_CONTRIB_IMAGE = "https://cdn.discordapp.com/emojis/1026533070955872337.png";
@@ -167,15 +165,34 @@ function EquicordSettings() {
 
     return (
         <SettingsTab>
-            <SpecialCard
-                title="Support Gooncord"
-                description="Check out Gooncord on GitHub to star the project, report issues, and follow development!"
-                cardImage={donateImage}
-                backgroundImage={DONOR_BACKGROUND_IMAGE}
-                backgroundColor="#c3a3ce"
-            >
-                <DonateButtonComponent />
-            </SpecialCard>
+            {(isEquicordDonor(user?.id) || isVencordDonor(user?.id)) ? (
+                <SpecialCard
+                    title="Donations"
+                    subtitle="Thank you for donating!"
+                    description={
+                        isEquicordDonor(user?.id) && isVencordDonor(user?.id)
+                            ? "All Vencord users can see your Vencord donor badge, and Equicord users can see your Equicord donor badge. To change your Vencord donor badge, contact @vending.machine. For your Equicord donor badge, make a ticket in Equicord's server."
+                            : isVencordDonor(user?.id)
+                                ? "All Vencord users can see your badge! You can manage your perks by messaging @vending.machine."
+                                : "All Equicord users can see your badge! You can manage your perks by making a ticket in Equicord's server."
+                    }
+                    cardImage={VENNIE_DONATOR_IMAGE}
+                    backgroundImage={DONOR_BACKGROUND_IMAGE}
+                    backgroundColor="#ED87A9"
+                >
+                    <DonateButtonComponent donated={true} />
+                </SpecialCard>
+            ) : (
+                <SpecialCard
+                    title="Support the Project"
+                    description="Please consider supporting the development of Equicord by donating!"
+                    cardImage={donateImage}
+                    backgroundImage={DONOR_BACKGROUND_IMAGE}
+                    backgroundColor="#c3a3ce"
+                >
+                    <DonateButtonComponent />
+                </SpecialCard>
+            )}
             {isAnyPluginDev(user?.id) && (
                 <SpecialCard
                     title="Contributions"
@@ -228,22 +245,22 @@ function EquicordSettings() {
                         action={() => VencordNative.settings.openFolder()}
                     />
                 )}
-                    <QuickAction
-                        Icon={GithubIcon}
-                        text="View Source Code"
-                        action={() =>
-                            VencordNative.native.openExternal(
-                                "https://github.com/truevibecode/gooncord"
-                            )
-                        }
-                    />
+                <QuickAction
+                    Icon={GithubIcon}
+                    text="View Source Code"
+                    action={() =>
+                        VencordNative.native.openExternal(
+                            "https://github.com/" + gitRemote,
+                        )
+                    }
+                />
             </QuickActionCard>
 
             <Divider className={Margins.top20} />
 
             <Heading className={Margins.top20}>Client Settings</Heading>
             <Paragraph className={Margins.bottom16}>
-                Configure how Gooncord behaves and integrates with Discord. These settings affect the Discord client's appearance and behavior.
+                Configure how Equicord behaves and integrates with Discord. These settings affect the Discord client's appearance and behavior.
             </Paragraph>
             <Notice.Info className={Margins.bottom20} style={{ width: "100%" }}>
                 You can customize where this settings section appears in Discord's settings menu by configuring the{" "}
