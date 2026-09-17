@@ -24,7 +24,6 @@ import { DBMessageStatus } from "../db";
 import { LoggedMessageJSON } from "../types";
 import { DEFAULT_ATTACHMENT_FILE_EXTENSIONS, DEFAULT_IMAGE_CACHE_DIR } from "./constants";
 import { DISCORD_EPOCH } from "./index";
-import { memoize } from "./memoize";
 
 const MessageClass: any = findLazy(m => m?.prototype?.isEdited);
 const AuthorClass = findLazy(m => m?.prototype?.getAvatarURL);
@@ -93,9 +92,18 @@ export const mapTimestamp = (m: any) => {
     return m;
 };
 
-export const messageJsonToMessageClass = memoize((log: { message: LoggedMessageJSON; }) => {
+export const messageJsonToMessageClass = (() => {
+    // Id-keyed instead of memoize(JSON.stringify): stringifying full message
+    // JSON per call was the hottest cost in the logs modal / re-add path.
+    // Key includes the edit marker so edited messages don't serve stale data.
+    const cache = new Map<string, any>();
+    return (log: { message: LoggedMessageJSON; }) => {
     // console.time("message populate");
     if (!log?.message) return null;
+
+    const cacheKey = `${log.message.id}:${log.message.editedTimestamp ?? log.message.timestamp}`;
+    const hit = cache.get(cacheKey);
+    if (hit) return hit;
 
     const message: any = new MessageClass(log.message);
     message.timestamp = getTimestamp(message.timestamp);
@@ -122,8 +130,11 @@ export const messageJsonToMessageClass = memoize((log: { message: LoggedMessageJ
         message.messageSnapshots.map(m => mapTimestamp(m.message));
 
     // console.timeEnd("message populate");
+    if (cache.size >= 200) cache.delete(cache.keys().next().value!);
+    cache.set(cacheKey, message);
     return message;
-});
+};
+})();
 
 export function parseJSON(json?: string | null) {
     if (!json) return null;

@@ -923,6 +923,8 @@ function startRerenderInterval(entry: AutoCompleteEntry): void {
             return;
         }
 
+        // Idle-gated: quest list rerenders wait for a visible window.
+        if (document.hidden) return;
         rerenderQuests();
     }, 1000);
 }

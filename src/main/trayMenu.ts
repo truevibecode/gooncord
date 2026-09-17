@@ -7,7 +7,6 @@
 import { IpcEvents } from "@shared/IpcEvents";
 import { gitHashShort } from "@shared/vencordUserAgent";
 import { BrowserWindow, ipcMain, Menu, MenuItemConstructorOptions, shell } from "electron";
-import aboutHtml from "file://about.html?minify";
 
 import { SETTINGS_DIR, THEMES_DIR } from "./utils/constants";
 
@@ -55,7 +54,7 @@ function isTrayMenu(template: MenuItemConstructorOptions[]): boolean {
 
 let aboutWindow: BrowserWindow | null = null;
 
-function openAboutWindow() {
+async function openAboutWindow() {
     if (aboutWindow) {
         aboutWindow.focus();
         return;
@@ -81,6 +80,9 @@ function openAboutWindow() {
         shell.openExternal(url);
     });
 
+    // Lazy: the ~5KB inlined About page only loads when the window opens,
+    // not on every main-process boot.
+    const { default: aboutHtml } = await import("file://about.html?minify");
     const aboutParams = aboutHtml
         .replaceAll("{{VERSION}}", VERSION)
         .replaceAll("{{GIT_HASH}}", gitHashShort);

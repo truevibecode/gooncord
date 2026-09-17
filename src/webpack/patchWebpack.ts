@@ -14,7 +14,7 @@ import { Patch, PatchReplacement } from "@utils/types";
 import { WebpackRequire } from "@vencord/discord-types/webpack";
 
 import { AnyModuleFactory, AnyWebpackRequire, MaybePatchedModuleFactory, PatchedModuleFactory } from "./types";
-import { _blacklistBadModules, _initWebpack, factoryListeners, findModuleFactory, moduleListeners, waitForSubscriptions, wreq } from "./webpack";
+import { _blacklistBadModules, _initWebpack, factoryListeners, findModuleFactory, mayMatchProps, moduleListeners, waitForSubscriptions, wreq } from "./webpack";
 
 export const patches = [] as Patch[];
 
@@ -292,10 +292,31 @@ const moduleFactoryHandler: ProxyHandler<MaybePatchedModuleFactory> = {
     }
 };
 
+// Whether a factory needs the observing Proxy. String finds are prefetched
+// with one `includes` each; regex finds conservatively keep the proxy.
+function needsFactoryProxy(factory: AnyModuleFactory): boolean {
+    if (factoryListeners.size !== 0 || moduleListeners.size !== 0 || waitForSubscriptions.size !== 0) return true;
+    if (patches.length === 0) return false;
+    let src: string | undefined;
+    for (const patch of patches) {
+        const find = (patch as Patch).find;
+        if (typeof find !== "string") return true;
+        src ??= String(factory);
+        if (src.includes(find)) return true;
+    }
+    return false;
+}
+
 function proxyFactoryAndUpdateExisting(moduleFactories: AnyWebpackRequire["m"], moduleId: PropertyKey, newFactory: AnyModuleFactory, receiver: any, ignoreExistingInTarget = false) {
     notifyFactoryListeners(moduleId, newFactory);
+    // Skip the Proxy when nothing can observe this factory: no listeners, no
+    // pending waitFors, and its source matches no registered patch `find`.
+    // (Patch plugins require restart, and patches are registered once at boot
+    // in initPluginManager, so a skipped factory can't miss a future patch.)
     // Hoisted: Settings is a proxied store; reading per-factory (thousands at boot) pays trap each time.
-    const proxiedFactory = new Proxy(EAGER_PATCHES ? patchFactory(moduleId, newFactory) : newFactory, moduleFactoryHandler);
+    const proxiedFactory = needsFactoryProxy(newFactory)
+        ? new Proxy(EAGER_PATCHES ? patchFactory(moduleId, newFactory) : newFactory, moduleFactoryHandler)
+        : newFactory;
 
     if (updateExistingFactory(moduleFactories, moduleId, newFactory, proxiedFactory, ignoreExistingInTarget)) {
         return true;
@@ -463,6 +484,10 @@ function runFactoryWithWrap(patchedFactory: PatchedModuleFactory, thisArg: unkno
     const subs = Array.from(waitForSubscriptions);
     for (const [filter, callback] of subs) {
         if (!waitForSubscriptions.has(filter)) continue;
+        // Fast path: byProps filters carry their prop list (see filters.byProps);
+        // skip the full test + nested walk when no hinted key can match.
+        const hint = (filter as any)._goonProps as string[] | undefined;
+        if (hint && !mayMatchProps(exports, hint)) continue;
         let matched: any = null;
         try {
             if (filter(exports)) matched = exports;

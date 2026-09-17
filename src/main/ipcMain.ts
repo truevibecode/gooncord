@@ -30,6 +30,7 @@ import { release } from "os";
 import { join } from "path";
 
 import { registerCspIpcHandlers } from "./csp/manager";
+import { RendererSettings } from "./settings";
 import { getThemeInfo, stripBOM, UserThemeHeader } from "./themes";
 import { ALLOWED_PROTOCOLS, QUICK_CSS_PATH, SETTINGS_DIR, THEMES_DIR } from "./utils/constants";
 import { ensureSafePath } from "./utils/ensureSafePath";
@@ -116,41 +117,49 @@ let fileWatchersGeneration = 0;
 
 ipcMain.handle(IpcEvents.INIT_FILE_WATCHERS, ({ sender }) => {
     const generation = ++fileWatchersGeneration;
-    fsWatchers.forEach(w => { try { w.close(); } catch { } });
+    for (const w of fsWatchers) { try { w.close(); } catch { } }
     fsWatchers = [];
 
-    let quickCssWatcher: FSWatcher | undefined;
-    let rendererCssWatcher: FSWatcher | undefined;
+    // Fixed: previously reassigned below, leaking a quickCssWatcher created
+    // after the reassignment. Now every watcher is tracked in `local` and
+    // only promoted while its generation is still current.
+    const local: FSWatcher[] = [];
+    const track = (w: FSWatcher | undefined) => {
+        if (!w || sender.isDestroyed() || generation !== fileWatchersGeneration) {
+            try { w?.close(); } catch { }
+            return;
+        }
+        local.push(w);
+        fsWatchers.push(w);
+    };
 
-    open(QUICK_CSS_PATH, "a+").then(fd => {
-        fd.close().catch(() => { });
-        if (generation !== fileWatchersGeneration || sender.isDestroyed()) return;
-        quickCssWatcher = watch(QUICK_CSS_PATH, { persistent: false }, debounce(async () => {
-            if (!sender.isDestroyed())
-                sender.postMessage(IpcEvents.QUICK_CSS_UPDATE, await readCss());
-        }, 50));
-        fsWatchers.push(quickCssWatcher);
-    }).catch(() => { });
-
-    const themesWatcher = watch(THEMES_DIR, { persistent: false }, debounce(() => {
-        if (!sender.isDestroyed())
-            sender.postMessage(IpcEvents.THEME_UPDATE, void 0);
-    }));
-
-    if (IS_DEV) {
-        rendererCssWatcher = watch(RENDERER_CSS_PATH, { persistent: false }, async () => {
-            if (!sender.isDestroyed())
-                sender.postMessage(IpcEvents.RENDERER_CSS_UPDATE, await readFile(RENDERER_CSS_PATH, "utf-8"));
-        });
+    // QuickCSS touch + watch only when the feature is on. Saves an FD,
+    // a disk touch and IPC spam for everyone not using QuickCSS.
+    if (RendererSettings.store.useQuickCss) {
+        open(QUICK_CSS_PATH, "a+").then(fd => {
+            fd.close().catch(() => { });
+            if (generation !== fileWatchersGeneration || sender.isDestroyed()) return;
+            track(watch(QUICK_CSS_PATH, { persistent: false }, debounce(async () => {
+                if (!sender.isDestroyed())
+                    sender.postMessage(IpcEvents.QUICK_CSS_UPDATE, await readCss());
+            }, 50)));
+        }).catch(() => { });
     }
 
-    fsWatchers = [themesWatcher, rendererCssWatcher].filter(Boolean) as FSWatcher[];
-    if (quickCssWatcher) fsWatchers.push(quickCssWatcher);
+    track(watch(THEMES_DIR, { persistent: false }, debounce(() => {
+        if (!sender.isDestroyed())
+            sender.postMessage(IpcEvents.THEME_UPDATE, void 0);
+    })));
+
+    if (IS_DEV) {
+        track(watch(RENDERER_CSS_PATH, { persistent: false }, async () => {
+            if (!sender.isDestroyed())
+                sender.postMessage(IpcEvents.RENDERER_CSS_UPDATE, await readFile(RENDERER_CSS_PATH, "utf-8"));
+        }));
+    }
 
     sender.once("destroyed", () => {
-        quickCssWatcher?.close();
-        try { themesWatcher.close(); } catch { }
-        rendererCssWatcher?.close();
+        for (const w of local) { try { w.close(); } catch { } }
         if (generation === fileWatchersGeneration)
             fsWatchers = [];
     });
@@ -216,12 +225,18 @@ if (IS_DISCORD_DESKTOP) {
     let cachedRendererJs: string | undefined;
     // Pre-warm async so first window doesn't pay sync read.
     readFileAsync(join(__dirname, "renderer.js"), "utf-8").then(s => cachedRendererJs = s).catch(() => { });
-    ipcMain.on(IpcEvents.PRELOAD_GET_RENDERER_JS, e => {
+    const serveRendererJs = () => {
         if (cachedRendererJs === undefined) {
             try { cachedRendererJs = readFileSync(join(__dirname, "renderer.js"), "utf-8"); } catch { cachedRendererJs = ""; }
         }
-        e.returnValue = cachedRendererJs;
+        return cachedRendererJs;
+    };
+    // Legacy sync path (kept for compat).
+    ipcMain.on(IpcEvents.PRELOAD_GET_RENDERER_JS, e => {
+        e.returnValue = serveRendererJs();
     });
+    // Preferred async path: no 3.4MB sync copy stalling main / the UI thread.
+    ipcMain.handle(IpcEvents.PRELOAD_GET_RENDERER_JS, async () => serveRendererJs());
 }
 
 ipcMain.on(IpcEvents.SUPPORTS_WINDOWS_MATERIAL, e => {

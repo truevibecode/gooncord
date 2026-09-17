@@ -59,10 +59,10 @@ if (!IS_VANILLA) {
         }
     }
 
-    // Repatch after host updates on Windows and Linux
-    if (process.platform === "win32" || process.platform === "linux") {
-        require("./persistAfterDiscordUpdates");
-    }
+    // NOTE: persistAfterDiscordUpdates (global EventEmitter.emit proxy + sync
+    // sibling scan on quit) was removed. hostUpdateHook above covers updates;
+    // the emit proxy taxed every Electron event forever. Reinject manually if
+    // a legacy updater path ever skips the hook.
 
     if (process.platform === "win32" && settings.winCtrlQ) {
         const originalBuild = Menu.buildFromTemplate;

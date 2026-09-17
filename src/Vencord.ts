@@ -120,6 +120,21 @@ async function syncSettings() {
 
 let notifiedForUpdatesThisSession = false;
 
+// Idle-deferred starter: the whole WebpackReady burst (each start can scan
+// the webpack cache) moves off the critical path past first paint, in
+// registration order. Sync fallback when idle callbacks are unavailable.
+function startAllPluginsChunked(target: StartAt) {
+    const schedule = (fn: () => void) =>
+        (window as any).requestIdleCallback?.(fn, { timeout: 5000 }) ?? setTimeout(fn, 0);
+    schedule(() => {
+        try {
+            startAllPlugins(target);
+        } catch (err) {
+            console.error(`[Gooncord] startAllPlugins(${target}) threw:`, err);
+        }
+    });
+}
+
 // Loaded on demand: settings UI (68 files) only needed when user opens it.
 async function openUpdaterTab() {
     const { openSettingsTabModal, UpdaterTab } = await import("@components/settings");
@@ -205,8 +220,13 @@ function initTrayIpc() {
 }
 
 async function init() {
-    await onceReady;
-    startAllPlugins(StartAt.WebpackReady);
+    // Bounded gateway wait: on slow/offline networks onceReady (Flux
+    // CONNECTION_OPEN) can stall boot indefinitely, leaving a vanilla-looking
+    // client. Patch-dependent starts proceed after the timeout; store-heavy
+    // plugins resolve lazily via their own waitFor fallbacks.
+    const gatewayTimeout = new Promise<void>(res => setTimeout(res, 10_000));
+    await Promise.race([onceReady, gatewayTimeout]);
+    startAllPluginsChunked(StartAt.WebpackReady);
 
     // Off critical path: cloud IDB + network + tray IPC don't block chat render.
     const idle = (fn: () => void) => (window as any).requestIdleCallback?.(fn, { timeout: 15000 }) ?? setTimeout(fn, 3000);
@@ -222,7 +242,11 @@ async function init() {
 
         // this tends to get really annoying, so only do this if the user has auto-update without notification enabled
         if (Settings.autoUpdate && !Settings.autoUpdateNotification) {
-            setInterval(runUpdateCheck, 1000 * 60 * 30); // 30 minutes
+            setInterval(() => {
+                // Idle-gated: no wakeups for a hidden window.
+                if (document.hidden) return;
+                runUpdateCheck();
+            }, 1000 * 60 * 30); // 30 minutes
         }
     }
 

@@ -23,7 +23,11 @@ export class LimitedMap<K, V> {
     constructor() { }
 
     set(key: K, value: V) {
-        if (settings.store.cacheLimit > 0 && this.map.size >= settings.store.cacheLimit) {
+        // Hard ceiling even when the user sets cacheLimit to 0/unlimited:
+        // an unbounded in-memory mirror is how sessions balloon past 500MB.
+        const configured = settings.store.cacheLimit;
+        const limit = configured > 0 ? configured : 5000;
+        if (this.map.size >= limit) {
             // delete the first entry
             this.map.delete(this.map.keys().next().value!);
         }

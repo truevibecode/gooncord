@@ -52,14 +52,26 @@ export const PMLogger = logger;
 
 /** Whether we have subscribed to flux events of all the enabled plugins when FluxDispatcher was ready */
 let enabledPluginsSubscribedFlux = false;
+
+// isPluginEnabled() cache. Cleared on any settings write (registered in
+// initPluginManager, not at module scope, to dodge circular-init order).
+const enabledCache = new Map<string, boolean>();
 const subscribedFluxEventsPlugins = new Set<string>();
 
 export function isPluginEnabled(p: string) {
-    return (
-        Plugins[p]?.required ||
-        Plugins[p]?.isDependency ||
-        Settings.plugins[p]?.enabled
-    ) ?? false;
+    // Cached: the uncached path walks Settings proxies (+ default resolution)
+    // and this runs per plugin per stage plus per settings read. Cleared on
+    // any settings change below, so it can never serve a stale toggle.
+    let v = enabledCache.get(p);
+    if (v === undefined) {
+        v = (
+            Plugins[p]?.required ||
+            Plugins[p]?.isDependency ||
+            Settings.plugins[p]?.enabled
+        ) ?? false;
+        enabledCache.set(p, v);
+    }
+    return v;
 }
 export function isPluginRequired(p: string) {
     return (
@@ -390,6 +402,7 @@ export const stopPlugin = traceFunction("stopPlugin", function stopPlugin(p: Plu
 }, p => `stopPlugin ${p.name}`);
 
 export const initPluginManager = onlyOnce(function init() {
+    SettingsStore.addGlobalChangeListener(() => enabledCache.clear());
     const pluginsValues = Object.values(Plugins);
     const settings = Settings.plugins;
 

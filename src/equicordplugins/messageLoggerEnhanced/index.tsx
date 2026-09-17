@@ -375,6 +375,10 @@ export default definePlugin({
 
         // we have to do this because the original message logger fetches the message from the store now
         MessageStore.getMessage = (channelId: string, messageId: string) => {
+            // Fast path: logging off means no deleted/edited overlay to serve.
+            if (!settings.store.saveMessages)
+                return this.oldGetMessage(channelId, messageId);
+
             const MLMessage = idb.cachedMessages.get(messageId);
             if (!MLMessage)
                 return this.oldGetMessage(channelId, messageId);

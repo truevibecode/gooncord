@@ -351,8 +351,12 @@ export const commonOpts = {
     logLevel: "info",
     bundle: true,
     minify: !watch && !IS_REPORTER,
-    sourcemap: watch ? "inline" : "external",
+    // Prod ships no maps (kept for --reporter/CI triage). Saves ~13MB/target.
+    sourcemap: watch ? "inline" : IS_REPORTER ? "external" : false,
     legalComments: "linked",
+    // Drop debugger statements in prod. console.* is intentionally kept:
+    // boot failure logs are the only diagnostics on user machines.
+    drop: watch || IS_REPORTER ? [] : ["debugger"],
     banner,
     plugins: [fileUrlPlugin, gitHashPlugin, gitRemotePlugin, stylePlugin],
     external: ["~plugins", "~git-hash", "~git-remote", "/assets/*"],
