@@ -1198,6 +1198,10 @@ function triggerNameRerender() {
 
 function CustomNicknameModal({ modalProps, user }: { modalProps: RenderModalProps; user: User; }) {
     const [value, setValue] = useState(customNicknames[user.id] ?? "");
+    // Context-menu user objects can be partial (no globalName cached yet),
+    // which showed the raw username as the placeholder. Resolve the full
+    // store user first so the editor always shows the real display name.
+    const fullUser = UserStore.getUser(user.id) ?? user;
 
     return (
         <Modal
@@ -1240,7 +1244,7 @@ function CustomNicknameModal({ modalProps, user }: { modalProps: RenderModalProp
                 value={value}
                 maxLength={32}
                 onChange={setValue}
-                placeholder={user.globalName ?? user.username}
+                placeholder={fullUser.globalName ?? fullUser.username}
                 style={{ width: "100%" }}
             />
             <TextButton
