@@ -234,7 +234,7 @@ async function init() {
             );
     }
     // Startup notice
-    console.log("%c[Gooncord v1.13]%c Ultra-performance build active (%s)", "color: #7289da; font-weight: bold; font-size: 14px;", "color: #43b581; font-weight: bold;", new Date().toLocaleTimeString());
+    console.log("%c[Gooncord v1.12]%c Ultra-performance build active (%s)", "color: #7289da; font-weight: bold; font-size: 14px;", "color: #43b581; font-weight: bold;", new Date().toLocaleTimeString());
 }
 
 initPluginManager();
