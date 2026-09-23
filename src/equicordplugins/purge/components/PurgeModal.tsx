@@ -13,9 +13,10 @@ import {
 import type { RenderModalProps } from "@vencord/discord-types";
 
 import {
-    fetchPreviews, getProgress, PurgeFilter, PurgePreview, requestStop, resetEngine, runDeletion, subscribeProgress
+    fetchPreviews, getProgress, PurgeFilter, requestStop, resetEngine, runDeletion, subscribeProgress
 } from "../engine";
 import { settings } from "../settings";
+import { PurgeConsole } from "./PurgeConsole";
 
 import "../styles.css";
 
@@ -103,35 +104,6 @@ const TIME_PRESETS: { label: string; days: number | null; }[] = [
     { label: "All", days: null },
 ];
 
-function downloadArchive(channelId: string, previews: PurgePreview[]) {
-    const payload = {
-        app: "gooncord-purge-archive",
-        version: 1,
-        channelId,
-        exportedAt: new Date().toISOString(),
-        count: previews.length,
-        messages: previews
-    };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `purge-archive-${channelId}-${Date.now()}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-}
-
-function etaText(iso?: string): string | null {
-    if (!iso) return null;
-    const ms = new Date(iso).getTime() - Date.now();
-    if (!Number.isFinite(ms) || ms <= 0) return "almost done";
-    const min = Math.floor(ms / 60000);
-    if (min < 1) return "under a minute left";
-    if (min < 60) return `~${min}m left`;
-    return `~${Math.floor(min / 60)}h ${min % 60}m left`;
-}
-
 export function openPurgeModal(initialChannelId?: string) {
     openModal(props => <PurgeModal props={props} initialChannelId={initialChannelId} />);
 }
@@ -171,7 +143,6 @@ function PurgeModal({ props, initialChannelId }: { props: RenderModalProps; init
     }, []);
 
     const running = progress.status === "fetching" || progress.status === "deleting";
-    const pct = progress.total > 0 ? Math.min(100, Math.round(((progress.deleted + progress.skipped) / progress.total) * 100)) : 0;
 
     // Terminal toasts (background-friendly: fires even if you navigated away and came back).
     React.useEffect(() => {
@@ -229,10 +200,6 @@ function PurgeModal({ props, initialChannelId }: { props: RenderModalProps; init
         }
         setBusy(true);
         try {
-            if (settings.store.archiveBeforeDelete) {
-                downloadArchive(filter.channelId, previews);
-                Toasts.show({ message: "Archive downloaded before deleting.", id: Toasts.genId(), type: Toasts.Type.MESSAGE, options: { position: Toasts.Position.BOTTOM } });
-            }
             await runDeletion(me.id, filter, previews);
         } finally {
             setBusy(false);
@@ -306,24 +273,7 @@ function PurgeModal({ props, initialChannelId }: { props: RenderModalProps; init
             </div>
 
             <div className="goon-purge-section">
-                <div className="goon-purge-console">
-                    <div>{progress.message}</div>
-                    {(progress.status === "deleting" || progress.status === "fetching") && progress.total > 0 && (
-                        <>
-                            <div className="goon-purge-bar-track">
-                                <div
-                                    className="goon-purge-bar-fill"
-                                    style={{ width: `${progress.status === "deleting" ? pct : Math.min(100, Math.round((progress.total / Math.max(progress.total, 1)) * 100))}` }}
-                                />
-                            </div>
-                            <div className="goon-purge-meta">
-                                {progress.deleted + progress.skipped}/{progress.total}
-                                {progress.status === "deleting" && ` · ${progress.speedPerMinute}/min`}
-                                {progress.status === "deleting" && etaText(progress.estimatedCompletion) && ` · ${etaText(progress.estimatedCompletion)}`}
-                            </div>
-                        </>
-                    )}
-                </div>
+                <PurgeConsole progress={progress} />
             </div>
 
             {progress.previews.length > 0 && (

@@ -18,11 +18,6 @@ export const settings = definePluginSettings({
         default: 1000,
         restartNeeded: false
     },
-    archiveBeforeDelete: {
-        description: "Download a JSON archive of matched messages before deleting anything.",
-        type: OptionType.BOOLEAN,
-        default: true
-    },
     confirmBeforeDelete: {
         description: "Always ask for confirmation before a deletion run starts.",
         type: OptionType.BOOLEAN,

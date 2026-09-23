@@ -48,6 +48,8 @@ export interface PurgeProgress {
     startedAt?: string;
     estimatedCompletion?: string;
     previews: PurgePreview[];
+    /** Rolling console lines, newest last (capped). */
+    log: string[];
 }
 
 type Listener = (p: PurgeProgress) => void;
@@ -61,7 +63,8 @@ let progress: PurgeProgress = {
     skipped: 0,
     speedPerMinute: 0,
     message: "Nothing running.",
-    previews: []
+    previews: [],
+    log: []
 };
 
 let stopRequested = false;
@@ -84,6 +87,12 @@ function emit(next: Partial<PurgeProgress>) {
             logger.warn("progress listener failed", e);
         }
     }
+}
+
+/** Append a timestamped line to the live console (capped at 80). */
+function pushLog(message: string) {
+    const t = new Date().toLocaleTimeString();
+    emit({ log: [...progress.log.slice(-79), `[${t}] ${message}`] });
 }
 
 export function requestStop() {
@@ -181,10 +190,12 @@ export async function fetchPreviews(accountId: string, filter: PurgeFilter): Pro
         targetName,
         previews: []
     });
+    pushLog(`Search started in ${targetName}.`);
 
     while (!complete) {
         if (stopRequested) {
             emit({ status: "stopped", message: "Search stopped.", previews: found });
+            pushLog("Search stopped by user.");
             return found;
         }
 
@@ -239,6 +250,7 @@ export async function fetchPreviews(accountId: string, filter: PurgeFilter): Pro
             targetName,
             previews: []
         });
+        pushLog(`Found ${found.length} matching so far...`);
 
         if (found.length >= limit) break;
         const totalResults = res.total_results;
@@ -247,13 +259,15 @@ export async function fetchPreviews(accountId: string, filter: PurgeFilter): Pro
     }
 
     found.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    const readyMessage = found.length ? `${found.length} message${found.length === 1 ? "" : "s"} match. Review, then delete.` : "No matching messages found.";
     emit({
         status: "ready",
         total: found.length,
-        message: found.length ? `${found.length} message${found.length === 1 ? "" : "s"} match. Review, then delete.` : "No matching messages found.",
+        message: readyMessage,
         targetName,
         previews: found
     });
+    pushLog(readyMessage);
     return found;
 }
 
@@ -283,10 +297,12 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
         startedAt: new Date(startedAt).toISOString(),
         previews
     });
+    pushLog(`Deleting ${previews.length} messages in ${targetName}...`);
 
     for (const message of previews) {
         if (stopRequested) {
             emit({ status: "stopped", deleted, skipped, speedPerMinute: speed(), message: `Stopped with ${deleted} deleted, ${skipped} skipped.` });
+            pushLog(`Stopped with ${deleted} deleted, ${skipped} skipped.`);
             return;
         }
 
@@ -299,6 +315,7 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
             } catch (e) {
                 if (isGone(e) || isNoAccess(e)) {
                     skipped += 1;
+                    const reason = isNoAccess(e) ? "no access" : "already deleted";
                     emit({
                         status: "deleting",
                         deleted,
@@ -307,6 +324,7 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
                         estimatedCompletion: eta(),
                         message: isNoAccess(e) ? "Skipped a message with no access." : "Skipped an already-deleted message."
                     });
+                    pushLog(`Skipped ${message.id} (${reason}).`);
                     break;
                 }
                 const retryAfter = Number((e as any)?.body?.retry_after ?? (e as any)?.retry_after ?? NaN);
@@ -314,10 +332,13 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
                     rateWaits += 1;
                     const wait = (Number.isFinite(retryAfter) ? retryAfter : 1) * 1000 + 500;
                     emit({ status: "deleting", deleted, skipped, speedPerMinute: speed(), estimatedCompletion: eta(), message: `Rate limited, waiting ${Math.ceil(wait / 1000)}s...` });
+                    pushLog(`Rate limited, waiting ${Math.ceil(wait / 1000)}s...`);
                     await sleep(wait);
                     continue;
                 }
-                emit({ status: "error", deleted, skipped, speedPerMinute: speed(), message: `Stopped on error: ${String((e as any)?.body?.message ?? (e as any)?.message ?? e).slice(0, 200)}` });
+                const fatalMessage = `Stopped on error: ${String((e as any)?.body?.message ?? (e as any)?.message ?? e).slice(0, 200)}`;
+                emit({ status: "error", deleted, skipped, speedPerMinute: speed(), message: fatalMessage });
+                pushLog(fatalMessage);
                 return;
             }
         }
@@ -331,6 +352,7 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
             estimatedCompletion: eta(),
             message: `Deleted ${deleted}/${previews.length}...`
         });
+        if (deleted % 25 === 0) pushLog(`Deleted ${deleted}/${previews.length} (${speed()}/min)...`);
 
         const base = Math.max(500, settings.store.deleteDelayMs);
         const jitterMax = Math.max(settings.store.deleteJitterMs, 0);
@@ -344,6 +366,7 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
         speedPerMinute: speed(),
         message: skipped ? `Done. ${deleted} deleted, ${skipped} skipped.` : `Done. ${deleted} message${deleted === 1 ? "" : "s"} deleted.`
     });
+    pushLog(skipped ? `Done. ${deleted} deleted, ${skipped} skipped.` : `Done. ${deleted} message${deleted === 1 ? "" : "s"} deleted.`);
 }
 
 export function resetEngine() {
@@ -358,6 +381,7 @@ export function resetEngine() {
         targetName: undefined,
         startedAt: undefined,
         estimatedCompletion: undefined,
-        previews: []
+        previews: [],
+        log: []
     });
 }
