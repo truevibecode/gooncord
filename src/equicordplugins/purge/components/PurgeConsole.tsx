@@ -26,11 +26,11 @@ function etaText(iso?: string): string | null {
 export function PurgeConsole({ progress }: { progress: PurgeProgress; }) {
     const boxRef = React.useRef<HTMLDivElement>(null);
 
-    // Pin to the bottom on every new line, like a terminal.
+    // Pin to the bottom on every new line or deleted message, like a terminal.
     React.useEffect(() => {
         const el = boxRef.current;
         if (el) el.scrollTop = el.scrollHeight;
-    }, [progress.log, progress.message]);
+    }, [progress.log, progress.message, progress.deletedLog]);
 
     const done = progress.deleted + progress.skipped;
     const pct = progress.total > 0 ? Math.min(100, Math.round((done / progress.total) * 100)) : 0;
@@ -54,7 +54,17 @@ export function PurgeConsole({ progress }: { progress: PurgeProgress; }) {
             {progress.log.length > 0 && (
                 <div className="goon-purge-log" ref={boxRef}>
                     {progress.log.map((line, i) => (
-                        <div key={i} className="goon-purge-log-line">{line}</div>
+                        <div key={`l${i}`} className="goon-purge-log-line">{line}</div>
+                    ))}
+                    {progress.deletedLog.map(e => (
+                        <div key={e.id} className="goon-purge-deleted-row">
+                            <span className="goon-purge-deleted-time">
+                                {new Date(e.timestamp).toLocaleTimeString()}
+                            </span>
+                            <span className="goon-purge-deleted-text">
+                                Deleted: {e.content || <i>(attachment/embed)</i>}
+                            </span>
+                        </div>
                     ))}
                 </div>
             )}

@@ -35,6 +35,13 @@ export interface PurgePreview {
     hasLink: boolean;
 }
 
+/** One freshly deleted message, as shown in the live console feed. */
+export interface DeletedEntry {
+    id: string;
+    content: string;
+    timestamp: string;
+}
+
 export type PurgeStatus = "idle" | "fetching" | "ready" | "deleting" | "done" | "stopped" | "error";
 
 export interface PurgeProgress {
@@ -50,6 +57,8 @@ export interface PurgeProgress {
     previews: PurgePreview[];
     /** Rolling console lines, newest last (capped). */
     log: string[];
+    /** Recently deleted messages for the live feed, newest last (capped). */
+    deletedLog: DeletedEntry[];
 }
 
 type Listener = (p: PurgeProgress) => void;
@@ -64,7 +73,8 @@ let progress: PurgeProgress = {
     speedPerMinute: 0,
     message: "Nothing running.",
     previews: [],
-    log: []
+    log: [],
+    deletedLog: []
 };
 
 let stopRequested = false;
@@ -188,7 +198,8 @@ export async function fetchPreviews(accountId: string, filter: PurgeFilter): Pro
         speedPerMinute: 0,
         message: `Searching your messages in ${targetName}...`,
         targetName,
-        previews: []
+        previews: [],
+        deletedLog: []
     });
     pushLog(`Search started in ${targetName}.`);
 
@@ -295,7 +306,8 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
         message: "Deletion in progress...",
         targetName,
         startedAt: new Date(startedAt).toISOString(),
-        previews
+        previews,
+        deletedLog: []
     });
     pushLog(`Deleting ${previews.length} messages in ${targetName}...`);
 
@@ -344,13 +356,19 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
         }
 
         deleted += 1;
+        const entry: DeletedEntry = {
+            id: message.id,
+            content: message.content.slice(0, 140),
+            timestamp: new Date().toISOString()
+        };
         emit({
             status: "deleting",
             deleted,
             skipped,
             speedPerMinute: speed(),
             estimatedCompletion: eta(),
-            message: `Deleted ${deleted}/${previews.length}...`
+            message: `Deleted ${deleted}/${previews.length}...`,
+            deletedLog: [...progress.deletedLog.slice(-49), entry]
         });
         if (deleted % 25 === 0) pushLog(`Deleted ${deleted}/${previews.length} (${speed()}/min)...`);
 
@@ -382,6 +400,7 @@ export function resetEngine() {
         startedAt: undefined,
         estimatedCompletion: undefined,
         previews: [],
-        log: []
+        log: [],
+        deletedLog: []
     });
 }
