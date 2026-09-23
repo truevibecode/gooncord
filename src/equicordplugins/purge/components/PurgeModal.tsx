@@ -88,6 +88,21 @@ function parseDateInput(raw: string): string | undefined {
     return Number.isFinite(ms) ? new Date(ms).toISOString() : undefined;
 }
 
+/** Local `YYYY-MM-DDTHH:mm` for the filter inputs (parses back via Date). */
+function toLocalInput(d: Date): string {
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** Time presets: [label, days back] — null clears the From bound (all time). */
+const TIME_PRESETS: { label: string; days: number | null; }[] = [
+    { label: "Day", days: 1 },
+    { label: "Week", days: 7 },
+    { label: "Month", days: 30 },
+    { label: "Year", days: 365 },
+    { label: "All", days: null },
+];
+
 function downloadArchive(channelId: string, previews: PurgePreview[]) {
     const payload = {
         app: "gooncord-purge-archive",
@@ -125,12 +140,19 @@ function PurgeModal({ props, initialChannelId }: { props: RenderModalProps; init
     const progress = React.useSyncExternalStore(subscribeProgress, getProgress);
     const [channelId, setChannelId] = React.useState(initialChannelId ?? SelectedChannelStore.getChannelId() ?? "");
     const [from, setFrom] = React.useState("");
-    const [to, setTo] = React.useState("");
+    // "To" defaults to the moment the menu was opened.
+    const [to, setTo] = React.useState(() => toLocalInput(new Date()));
     const [linksOnly, setLinksOnly] = React.useState(false);
     const [keyword, setKeyword] = React.useState("");
-    const [limit, setLimit] = React.useState("500");
     const [busy, setBusy] = React.useState(false);
     const [lastStatus, setLastStatus] = React.useState(progress.status);
+
+    /** Preset: From = N days back, To = right now. No amount cap — everything matching. */
+    const applyPreset = (days: number | null) => {
+        const now = new Date();
+        setTo(toLocalInput(now));
+        setFrom(days == null ? "" : toLocalInput(new Date(now.getTime() - days * 86400000)));
+    };
 
     const options = React.useMemo(buildChannelOptions, []);
     const selected = React.useMemo(() => {
@@ -173,7 +195,6 @@ function PurgeModal({ props, initialChannelId }: { props: RenderModalProps; init
         try {
             guildId = ChannelStore.getChannel(channelId)?.guild_id;
         } catch { /* ignore */ }
-        const max = Math.max(1, Math.min(5000, parseInt(limit, 10) || 500));
         return {
             channelId,
             guildId,
@@ -181,7 +202,6 @@ function PurgeModal({ props, initialChannelId }: { props: RenderModalProps; init
             toIso: parseDateInput(to),
             linksOnly,
             keyword: keyword.trim() || undefined,
-            limit: max,
             targetName: options.find(o => o.value === channelId)?.label ?? channelId
         };
     };
@@ -250,16 +270,20 @@ function PurgeModal({ props, initialChannelId }: { props: RenderModalProps; init
             </div>
 
             <div className="goon-purge-section">
-                <div className="goon-purge-label">Filters</div>
+                <div className="goon-purge-label">Time range</div>
+                <div className="goon-purge-row" style={{ marginBottom: 8 }}>
+                    {TIME_PRESETS.map(p => (
+                        <Button key={p.label} variant="secondary" size="small" onClick={() => applyPreset(p.days)}>
+                            {p.label}
+                        </Button>
+                    ))}
+                </div>
                 <div className="goon-purge-row">
                     <div className="goon-purge-field">
-                        <TextInput value={from} onChange={setFrom} placeholder="From: YYYY-MM-DD" />
+                        <TextInput value={from} onChange={setFrom} placeholder="From: YYYY-MM-DD HH:mm" />
                     </div>
                     <div className="goon-purge-field">
-                        <TextInput value={to} onChange={setTo} placeholder="To: YYYY-MM-DD" />
-                    </div>
-                    <div className="goon-purge-field">
-                        <TextInput value={limit} onChange={setLimit} placeholder="Max: 500" />
+                        <TextInput value={to} onChange={setTo} placeholder="To: YYYY-MM-DD HH:mm" />
                     </div>
                 </div>
                 <div className="goon-purge-row" style={{ marginTop: 8 }}>
