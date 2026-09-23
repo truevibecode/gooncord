@@ -1,0 +1,116 @@
+/* Purge — Discord-fitting menu, console and progress bar. */
+
+.goon-purge-section {
+    margin-bottom: 16px;
+}
+
+.goon-purge-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.goon-purge-label {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+
+.goon-purge-field {
+    flex: 1 1 140px;
+    min-width: 140px;
+}
+
+.goon-purge-console {
+    background: var(--background-secondary);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
+    color: var(--text-normal);
+}
+
+.goon-purge-bar-track {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--background-modifier-accent);
+    overflow: hidden;
+    margin: 8px 0;
+}
+
+.goon-purge-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--brand-500);
+    transition: width 0.3s linear;
+}
+
+.goon-purge-meta {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.goon-purge-preview {
+    max-height: 260px;
+    overflow-y: auto;
+    border: 1px solid var(--background-modifier-accent);
+    border-radius: 8px;
+}
+
+.goon-purge-preview-row {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--background-modifier-accent);
+    font-size: 13px;
+}
+
+.goon-purge-preview-row:last-child {
+    border-bottom: none;
+}
+
+.goon-purge-preview-time {
+    color: var(--text-muted);
+    flex-shrink: 0;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+.goon-purge-preview-text {
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.goon-purge-warning {
+    color: var(--text-warning, #f0b232);
+    font-size: 12px;
+}
+
+.goon-purge-btn-wrap {
+    position: relative;
+    display: inline-flex;
+}
+
+.goon-purge-mini-bar {
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    bottom: 2px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--background-modifier-accent);
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.goon-purge-mini-fill {
+    height: 100%;
+    background: var(--brand-500);
+    transition: width 0.3s linear;
+}
