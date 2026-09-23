@@ -13,6 +13,7 @@ import { Logger } from "@utils/Logger";
 import { RestAPI } from "@webpack/common";
 
 import { settings } from "./settings";
+import { verifyPreviews } from "./verify";
 
 const logger = new Logger("Purge");
 
@@ -282,7 +283,10 @@ export async function fetchPreviews(accountId: string, filter: PurgeFilter): Pro
     return found;
 }
 
-/** Delete previously fetched previews. Emits deleting progress. */
+/** Delete previously fetched previews. Re-verifies every preview against live
+ * Discord state first, so a stale list (e.g. Delete clicked after a finished
+ * run) can never re-delete already-gone messages. Terminal states clear the
+ * preview list, forcing a fresh Preview before the next run. */
 export async function runDeletion(accountId: string, filter: PurgeFilter, previews: PurgePreview[]): Promise<void> {
     resetStop();
     const targetName = filter.targetName ?? filter.channelId;
@@ -291,17 +295,66 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
     let skipped = 0;
 
     const speed = () => Math.round(deleted / Math.max((Date.now() - startedAt) / 60000, 1 / 60));
-    const eta = () => {
+    const eta = (total: number) => {
         if (!deleted) return undefined;
-        const remaining = Math.max(0, previews.length - deleted - skipped);
+        const remaining = Math.max(0, total - deleted - skipped);
         return new Date(Date.now() + ((Date.now() - startedAt) / deleted) * remaining).toISOString();
     };
+
+    emit({
+        status: "fetching",
+        total: previews.length,
+        deleted: 0,
+        skipped: 0,
+        speedPerMinute: 0,
+        message: `Verifying ${previews.length} previewed message(s) still exist...`,
+        targetName,
+        startedAt: new Date(startedAt).toISOString(),
+        previews,
+        deletedLog: []
+    });
+    pushLog(`Verifying ${previews.length} previewed message(s)...`);
+
+    let verified: PurgePreview[];
+    try {
+        const result = await verifyPreviews(previews, {
+            shouldStop: () => stopRequested,
+            onProgress: (checked, total) => {
+                emit({ message: `Verifying ${checked}/${total}...` });
+            }
+        });
+        if (result.aborted) {
+            emit({ status: "stopped", deleted: 0, skipped: 0, speedPerMinute: 0, message: "Stopped during verification.", previews: [] });
+            pushLog("Verification stopped by user.");
+            return;
+        }
+        skipped = result.gone.length + result.noAccess.length;
+        if (skipped > 0) {
+            pushLog(`${skipped} previewed message(s) already gone or inaccessible — skipping up front.`);
+        }
+        verified = result.alive;
+    } catch (e) {
+        const msg = `Verification failed: ${String((e as any)?.body?.message ?? (e as any)?.message ?? e).slice(0, 200)}`;
+        emit({ status: "error", deleted: 0, skipped: 0, speedPerMinute: 0, message: msg, previews: [] });
+        pushLog(msg);
+        return;
+    }
+
+    if (!verified.length) {
+        const msg = skipped
+            ? `Done. Nothing to delete — all ${skipped} already gone.`
+            : "Done. Nothing to delete.";
+        emit({ status: "done", deleted: 0, skipped, speedPerMinute: 0, message: msg, previews: [] });
+        pushLog(msg);
+        return;
+    }
+    previews = verified;
 
     emit({
         status: "deleting",
         total: previews.length,
         deleted: 0,
-        skipped: 0,
+        skipped,
         speedPerMinute: 0,
         message: "Deletion in progress...",
         targetName,
@@ -313,7 +366,7 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
 
     for (const message of previews) {
         if (stopRequested) {
-            emit({ status: "stopped", deleted, skipped, speedPerMinute: speed(), message: `Stopped with ${deleted} deleted, ${skipped} skipped.` });
+            emit({ status: "stopped", deleted, skipped, speedPerMinute: speed(), message: `Stopped with ${deleted} deleted, ${skipped} skipped.`, previews: [] });
             pushLog(`Stopped with ${deleted} deleted, ${skipped} skipped.`);
             return;
         }
@@ -333,7 +386,7 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
                         deleted,
                         skipped,
                         speedPerMinute: speed(),
-                        estimatedCompletion: eta(),
+                        estimatedCompletion: eta(previews.length),
                         message: isNoAccess(e) ? "Skipped a message with no access." : "Skipped an already-deleted message."
                     });
                     pushLog(`Skipped ${message.id} (${reason}).`);
@@ -343,13 +396,13 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
                 if (((e as any)?.status === 429 || Number.isFinite(retryAfter)) && rateWaits < 5) {
                     rateWaits += 1;
                     const wait = (Number.isFinite(retryAfter) ? retryAfter : 1) * 1000 + 500;
-                    emit({ status: "deleting", deleted, skipped, speedPerMinute: speed(), estimatedCompletion: eta(), message: `Rate limited, waiting ${Math.ceil(wait / 1000)}s...` });
+                    emit({ status: "deleting", deleted, skipped, speedPerMinute: speed(), estimatedCompletion: eta(previews.length), message: `Rate limited, waiting ${Math.ceil(wait / 1000)}s...` });
                     pushLog(`Rate limited, waiting ${Math.ceil(wait / 1000)}s...`);
                     await sleep(wait);
                     continue;
                 }
                 const fatalMessage = `Stopped on error: ${String((e as any)?.body?.message ?? (e as any)?.message ?? e).slice(0, 200)}`;
-                emit({ status: "error", deleted, skipped, speedPerMinute: speed(), message: fatalMessage });
+                emit({ status: "error", deleted, skipped, speedPerMinute: speed(), message: fatalMessage, previews: [] });
                 pushLog(fatalMessage);
                 return;
             }
@@ -366,7 +419,7 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
             deleted,
             skipped,
             speedPerMinute: speed(),
-            estimatedCompletion: eta(),
+            estimatedCompletion: eta(previews.length),
             message: `Deleted ${deleted}/${previews.length}...`,
             deletedLog: [...progress.deletedLog.slice(-49), entry]
         });
@@ -382,7 +435,8 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
         deleted,
         skipped,
         speedPerMinute: speed(),
-        message: skipped ? `Done. ${deleted} deleted, ${skipped} skipped.` : `Done. ${deleted} message${deleted === 1 ? "" : "s"} deleted.`
+        message: skipped ? `Done. ${deleted} deleted, ${skipped} skipped.` : `Done. ${deleted} message${deleted === 1 ? "" : "s"} deleted.`,
+        previews: []
     });
     pushLog(skipped ? `Done. ${deleted} deleted, ${skipped} skipped.` : `Done. ${deleted} message${deleted === 1 ? "" : "s"} deleted.`);
 }
