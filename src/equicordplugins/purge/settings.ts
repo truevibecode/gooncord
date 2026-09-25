@@ -18,6 +18,11 @@ export const settings = definePluginSettings({
         default: 1000,
         restartNeeded: false
     },
+    verifyBeforeDelete: {
+        description: "Re-check every previewed message with the API before deleting (slower, extra requests). Off by default: single-message checks can falsely report gone/no-access, so deletion itself is the source of truth.",
+        type: OptionType.BOOLEAN,
+        default: false
+    },
     confirmBeforeDelete: {
         description: "Always ask for confirmation before a deletion run starts.",
         type: OptionType.BOOLEAN,

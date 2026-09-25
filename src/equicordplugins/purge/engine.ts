@@ -157,16 +157,37 @@ function searchRoute(filter: PurgeFilter, accountId: string, offset: number): { 
     return { url: `/channels/${filter.channelId}/messages/search`, query };
 }
 
+function errStatus(e: any): number | undefined {
+    const s = (e as any)?.status;
+    return typeof s === "number" ? s : undefined;
+}
+
+function errCode(e: any): number | undefined {
+    const c = (e as any)?.body?.code;
+    return typeof c === "number" ? c : undefined;
+}
+
 function isNoAccess(err: any): boolean {
-    if (err?.status === 403) return true;
-    const text = String(err?.body?.message ?? err?.message ?? err ?? "");
+    if (errStatus(err) === 403) return true;
+    const code = errCode(err);
+    if (code === 50001 || code === 50013) return true;
+    const text = String((err as any)?.body?.message ?? (err as any)?.message ?? err ?? "");
     return /missing access|missing permissions|no access|50001|50013/i.test(text);
 }
 
 function isGone(err: any): boolean {
-    if (err?.status === 404) return true;
-    const text = String(err?.body?.message ?? err?.message ?? err ?? "");
+    if (errStatus(err) === 404) return true;
+    if (errCode(err) === 10008) return true;
+    const text = String((err as any)?.body?.message ?? (err as any)?.message ?? err ?? "");
     return /10008|unknown message/i.test(text);
+}
+
+/** Transient = worth retrying: 5xx, or a network-level failure with no usable status. */
+function isTransientError(err: any): boolean {
+    const status = errStatus(err);
+    if (status !== undefined) return status >= 500;
+    const text = String((err as any)?.message ?? err ?? "");
+    return /fetch failed|failed to fetch|networkerror|network request failed|timeout|timed out|econn|socket hang up|abort/i.test(text);
 }
 
 async function throwIfRateLimited(err: any, context: string): Promise<never> {
@@ -212,19 +233,30 @@ export async function fetchPreviews(accountId: string, filter: PurgeFilter): Pro
         }
 
         const { url, query } = searchRoute(filter, accountId, offset);
-        let res: SearchResponse;
-        try {
-            const r = await RestAPI.get({ url, query });
-            res = r.body as SearchResponse;
-        } catch (e) {
+        let res: SearchResponse | null = null;
+        let searchAttempts = 0;
+        while (res === null) {
             try {
-                await throwIfRateLimited(e, "Search");
-            } catch (rl: any) {
-                if (rl?.rateLimited) continue;
-                throw rl;
+                const r = await RestAPI.get({ url, query });
+                res = r.body as SearchResponse;
+            } catch (e) {
+                if (isTransientError(e) && searchAttempts < 3) {
+                    searchAttempts += 1;
+                    const wait = 2000 * searchAttempts;
+                    emit({ message: `Search hiccup, retrying in ${wait / 1000}s... (${searchAttempts}/3)` });
+                    pushLog(`Search hiccup, retrying in ${wait / 1000}s... (${searchAttempts}/3)`);
+                    await sleep(wait);
+                    continue;
+                }
+                try {
+                    await throwIfRateLimited(e, "Search");
+                } catch (rl: any) {
+                    if (rl?.rateLimited) continue;
+                    throw rl;
+                }
+                // unreachable, but tsc needs it
+                throw e;
             }
-            // unreachable, but tsc needs it
-            throw e;
         }
 
         const groups = res.messages ?? [];
@@ -301,54 +333,69 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
         return new Date(Date.now() + ((Date.now() - startedAt) / deleted) * remaining).toISOString();
     };
 
-    emit({
-        status: "fetching",
-        total: previews.length,
-        deleted: 0,
-        skipped: 0,
-        speedPerMinute: 0,
-        message: `Verifying ${previews.length} previewed message(s) still exist...`,
-        targetName,
-        startedAt: new Date(startedAt).toISOString(),
-        previews,
-        deletedLog: []
-    });
-    pushLog(`Verifying ${previews.length} previewed message(s)...`);
-
-    let verified: PurgePreview[];
-    try {
-        const result = await verifyPreviews(previews, {
-            shouldStop: () => stopRequested,
-            onProgress: (checked, total) => {
-                emit({ message: `Verifying ${checked}/${total}...` });
-            }
+    // Pre-flight re-checks are OFF by default (see verifyBeforeDelete setting):
+    // single-message GETs can falsely report live messages as gone or
+    // inaccessible (threads, archived channels, differing read-history
+    // perms), which used to nuke whole runs with "all already gone".
+    // The delete loop below is the source of truth and skips 404/403 live.
+    let verified: PurgePreview[] = previews;
+    if (settings.store.verifyBeforeDelete) {
+        emit({
+            status: "fetching",
+            total: previews.length,
+            deleted: 0,
+            skipped: 0,
+            speedPerMinute: 0,
+            message: `Verifying ${previews.length} previewed message(s) still exist...`,
+            targetName,
+            startedAt: new Date(startedAt).toISOString(),
+            previews,
+            deletedLog: []
         });
-        if (result.aborted) {
-            emit({ status: "stopped", deleted: 0, skipped: 0, speedPerMinute: 0, message: "Stopped during verification.", previews: [] });
-            pushLog("Verification stopped by user.");
+        pushLog(`Verifying ${previews.length} previewed message(s)...`);
+
+        try {
+            const result = await verifyPreviews(previews, {
+                shouldStop: () => stopRequested,
+                onProgress: (checked, total) => {
+                    emit({ message: `Verifying ${checked}/${total}...` });
+                }
+            });
+            if (result.aborted) {
+                emit({ status: "stopped", deleted: 0, skipped: 0, speedPerMinute: 0, message: "Stopped during verification.", previews: [] });
+                pushLog("Verification stopped by user.");
+                return;
+            }
+            skipped = result.gone.length + result.noAccess.length;
+            if (skipped > 0) {
+                pushLog(`${skipped} previewed message(s) already gone or inaccessible — skipping up front.`);
+            }
+            verified = result.alive;
+        } catch (e) {
+            const msg = `Verification failed: ${String((e as any)?.body?.message ?? (e as any)?.message ?? e).slice(0, 200)}`;
+            emit({ status: "error", deleted: 0, skipped: 0, speedPerMinute: 0, message: msg, previews: [] });
+            pushLog(msg);
             return;
         }
-        skipped = result.gone.length + result.noAccess.length;
-        if (skipped > 0) {
-            pushLog(`${skipped} previewed message(s) already gone or inaccessible — skipping up front.`);
+
+        if (!verified.length) {
+            const msg = skipped
+                ? `Done. Nothing to delete — all ${skipped} already gone.`
+                : "Done. Nothing to delete.";
+            emit({ status: "done", deleted: 0, skipped, speedPerMinute: 0, message: msg, previews: [] });
+            pushLog(msg);
+            return;
         }
-        verified = result.alive;
-    } catch (e) {
-        const msg = `Verification failed: ${String((e as any)?.body?.message ?? (e as any)?.message ?? e).slice(0, 200)}`;
-        emit({ status: "error", deleted: 0, skipped: 0, speedPerMinute: 0, message: msg, previews: [] });
-        pushLog(msg);
-        return;
+        previews = verified;
+    } else if (previews.length) {
+        pushLog(`Skipping pre-checks — deleting ${previews.length} message(s); gone/inaccessible ones are skipped live.`);
     }
 
-    if (!verified.length) {
-        const msg = skipped
-            ? `Done. Nothing to delete — all ${skipped} already gone.`
-            : "Done. Nothing to delete.";
-        emit({ status: "done", deleted: 0, skipped, speedPerMinute: 0, message: msg, previews: [] });
-        pushLog(msg);
+    if (!previews.length) {
+        emit({ status: "done", deleted: 0, skipped: 0, speedPerMinute: 0, message: "Done. Nothing to delete.", previews: [] });
+        pushLog("Nothing to delete.");
         return;
     }
-    previews = verified;
 
     emit({
         status: "deleting",
@@ -364,6 +411,9 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
     });
     pushLog(`Deleting ${previews.length} messages in ${targetName}...`);
 
+    // Consecutive unclassifiable failures: abort the run instead of burning
+    // through thousands of messages when something is systematically wrong.
+    let unknownStreak = 0;
     for (const message of previews) {
         if (stopRequested) {
             emit({ status: "stopped", deleted, skipped, speedPerMinute: speed(), message: `Stopped with ${deleted} deleted, ${skipped} skipped.`, previews: [] });
@@ -373,12 +423,15 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
 
         // Up to 5 consecutive rate-limit waits per message, then give up.
         let rateWaits = 0;
+        let transientWaits = 0;
         for (;;) {
             try {
                 await RestAPI.del({ url: `/channels/${message.channelId}/messages/${message.id}` });
+                unknownStreak = 0;
                 break;
             } catch (e) {
                 if (isGone(e) || isNoAccess(e)) {
+                    unknownStreak = 0;
                     skipped += 1;
                     const reason = isNoAccess(e) ? "no access" : "already deleted";
                     emit({
@@ -392,6 +445,13 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
                     pushLog(`Skipped ${message.id} (${reason}).`);
                     break;
                 }
+                // 401 = session dead: every further delete would fail identically.
+                if (errStatus(e) === 401) {
+                    const msg = "Session invalid (401) — restart Discord and try again.";
+                    emit({ status: "error", deleted, skipped, speedPerMinute: speed(), message: msg, previews: [] });
+                    pushLog(msg);
+                    return;
+                }
                 const retryAfter = Number((e as any)?.body?.retry_after ?? (e as any)?.retry_after ?? NaN);
                 if (((e as any)?.status === 429 || Number.isFinite(retryAfter)) && rateWaits < 5) {
                     rateWaits += 1;
@@ -401,10 +461,34 @@ export async function runDeletion(accountId: string, filter: PurgeFilter, previe
                     await sleep(wait);
                     continue;
                 }
-                const fatalMessage = `Stopped on error: ${String((e as any)?.body?.message ?? (e as any)?.message ?? e).slice(0, 200)}`;
-                emit({ status: "error", deleted, skipped, speedPerMinute: speed(), message: fatalMessage, previews: [] });
-                pushLog(fatalMessage);
-                return;
+                if (isTransientError(e) && transientWaits < 3) {
+                    transientWaits += 1;
+                    const wait = 2000 * transientWaits;
+                    emit({ status: "deleting", deleted, skipped, speedPerMinute: speed(), estimatedCompletion: eta(previews.length), message: `Network/server hiccup, retrying in ${wait / 1000}s... (${transientWaits}/3)` });
+                    pushLog(`Network/server hiccup on ${message.id}, retrying in ${wait / 1000}s... (${transientWaits}/3)`);
+                    await sleep(wait);
+                    continue;
+                }
+                // Unknown/persistent error: skip this one and keep the run alive,
+                // unless failures are clearly systematic.
+                unknownStreak += 1;
+                if (unknownStreak >= 10) {
+                    const fatalMessage = `Stopped: 10 straight unexpected errors (last: ${String((e as any)?.body?.message ?? (e as any)?.message ?? e).slice(0, 160)}). Fix the cause and re-run — Preview again first.`;
+                    emit({ status: "error", deleted, skipped, speedPerMinute: speed(), message: fatalMessage, previews: [] });
+                    pushLog(fatalMessage);
+                    return;
+                }
+                skipped += 1;
+                pushLog(`Skipped ${message.id} after retries: ${String((e as any)?.body?.message ?? (e as any)?.message ?? e).slice(0, 160)}`);
+                emit({
+                    status: "deleting",
+                    deleted,
+                    skipped,
+                    speedPerMinute: speed(),
+                    estimatedCompletion: eta(previews.length),
+                    message: `Skipped a failed message (${skipped} skipped). Continuing...`
+                });
+                break;
             }
         }
 
