@@ -29,7 +29,11 @@ export function makeLazy<T>(factory: () => T, attempts = 5): () => T {
             if (cache === undefined && attempts > tries)
                 cache = LAZY_UNSET;
         }
-        return cache as T;
+        // Never leak the internal UNSET sentinel to callers: after attempts
+        // are exhausted, return undefined so `?? fallback` guards (e.g.
+        // LazyComponent's NoopComponent) engage instead of React receiving
+        // a Symbol as an element type (React #130 crash).
+        return (cache === LAZY_UNSET ? undefined : cache) as T;
     };
 }
 

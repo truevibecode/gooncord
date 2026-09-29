@@ -608,7 +608,11 @@ export function findExportedComponentLazy<T extends object = any>(...props: Prop
         const res = find(filters.byProps(...props), { isIndirect: true });
         if (!res)
             handleModuleNotFound("findExportedComponent", ...props);
-        return res[props[0]];
+        // Null-guard: if Discord restructured the module (e.g. the Modal
+        // export moved), return undefined so LazyComponent falls back to
+        // NoopComponent instead of throwing TypeError: Cannot read
+        // properties of null (reading '<prop>') mid-render and crashing.
+        return res?.[props[0]];
     });
 }
 
